@@ -14,6 +14,7 @@ trait SparkTestBase extends BeforeAndAfter {
     val conf: SparkConf = new SparkConf()
       .setAppName("GSP")
       .set("spark.driver.host", "localhost")
+      .set("spark.default.parallelism", "2")
       .setMaster("local[*]")
     sparkContext = new SparkContext(conf)
   }

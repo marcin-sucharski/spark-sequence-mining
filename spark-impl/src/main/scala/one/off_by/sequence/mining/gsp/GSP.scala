@@ -1,7 +1,7 @@
 package one.off_by.sequence.mining.gsp
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
+import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
 import scala.reflect.ClassTag
 
@@ -23,25 +23,53 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 ) {
   type Percent = Double
   type Support = Percent
+  type SupportCount = Long
 
   type TaxonomyType = Taxonomy[ItemType]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
+
+  type Element = Set[ItemType]
+  type Pattern = List[Element]
+
+  assert(sc.getConf.contains("spark.default.parallelism"))
+  private[gsp] val partitioner: Partitioner =
+    new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2) * 4)
 
   def execute(
     transactions: RDD[TransactionType],
     minSupport: Percent,
     maybeTaxonomies: Option[RDD[TaxonomyType]] = None,
     maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None
-  ): RDD[(Support, List[ItemType])] = {
-    val sequenceCount = transactions.map(_.sequenceId).distinct().count()
+  ): RDD[(Pattern, Support)] = {
+    val sequences: RDD[(SequenceId, TransactionType)] = transactions
+      .map(t => (t.sequenceId, t))
+      .partitionBy(partitioner)
+      .persist()
+    val sequenceCount = sequences.keys.count()
     val minSupportCount = (sequenceCount * (minSupport * 0.01)).toLong
 
-    val sequences = prepareInitialSequences(transactions, minSupportCount)
+    val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
 
     ???
   }
 
-  private[gsp] def prepareInitialSequences(transactions: RDD[TransactionType], minSupportCount: Long) =
+  private[gsp] def prepareInitialPatterns(
+    sequences: RDD[(SequenceId, TransactionType)],
+    minSupportCount: Long
+  ): RDD[(Pattern, SupportCount)] =
+    sequences
+      .mapValues(_.items)
+      .mapPartitions(_.toSet.toIterator, preservesPartitioning = true)
+      .values
+      .map(element => (element :: Nil, 1L))
+      .reduceByKey(_ + _)
+      .filter(_._2 >= minSupportCount)
+
+
+  private[gsp] def prepareInitialSequences(
+    transactions: RDD[TransactionType],
+    minSupportCount: Long
+  ): RDD[List[Set[ItemType]]] =
     transactions
       .map(t => (t.sequenceId, t))
       .partitionBy(new HashPartitioner(sc.defaultMinPartitions))
