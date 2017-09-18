@@ -1,5 +1,6 @@
 package one.off_by.sequence.mining.gsp
 
+import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
@@ -21,15 +22,14 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 )(
   implicit timeOrdering: Ordering[TimeType]
 ) {
-  type Percent = Double
-  type Support = Percent
-  type SupportCount = Long
+
+  import Domain.{Percent, Support, SupportCount}
 
   type TaxonomyType = Taxonomy[ItemType]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
 
-  type Element = Set[ItemType]
-  type Pattern = List[Element]
+  type Element = Domain.Element[ItemType]
+  type Pattern = Domain.Pattern[ItemType]
 
   assert(sc.getConf.contains("spark.default.parallelism"))
   private[gsp] val partitioner: Partitioner =
@@ -44,7 +44,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val sequences: RDD[(SequenceId, TransactionType)] = transactions
       .map(t => (t.sequenceId, t))
       .partitionBy(partitioner)
-      .persist()
+      .cache()
     val sequenceCount = sequences.keys.count()
     val minSupportCount = (sequenceCount * (minSupport * 0.01)).toLong
 
@@ -58,27 +58,30 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     minSupportCount: Long
   ): RDD[(Pattern, SupportCount)] =
     sequences
-      .mapValues(_.items)
+      .mapValues(t => Element(t.items))
       .mapPartitions(_.toSet.toIterator, preservesPartitioning = true)
       .values
-      .map(element => (element :: Nil, 1L))
+      .map(element => (Pattern(element :: Nil), 1L))
       .reduceByKey(_ + _)
       .filter(_._2 >= minSupportCount)
+
+  private[gsp] def generateJoinCandidates(in: RDD[Pattern]): GSP.JoinCandidatesResult[ItemType] =
+    ???
 
 
   private[gsp] def prepareInitialSequences(
     transactions: RDD[TransactionType],
     minSupportCount: Long
-  ): RDD[List[Set[ItemType]]] =
+  ): RDD[Pattern] =
     transactions
       .map(t => (t.sequenceId, t))
       .partitionBy(new HashPartitioner(sc.defaultMinPartitions))
       .flatMapValues(_.items.subsets.filter(_.nonEmpty))
       .distinct()
-      .map(p => (p._2, 1L))
+      .map(p => (Element(p._2), 1L))
       .reduceByKey(_ + _)
       .filter(_._2 >= minSupportCount)
-      .map(_._1 :: Nil)
+      .map { case (a, b) => Pattern(a :: Nil) }
 
   private[gsp] def prepareTaxonomies(
     taxonomies: RDD[TaxonomyType]
@@ -118,6 +121,14 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 }
 
 object GSP {
+
+  import Domain._
+
+  private[gsp] case class JoinCandidatesResult[ItemType](
+    prefixHash: RDD[(Hash[ItemType], Pattern[Element[ItemType]])],
+    suffixHash: RDD[(Hash[ItemType], Pattern[Element[ItemType]])]
+  )
+
   def main(args: Array[String]): Unit = {
     val conf: SparkConf = new SparkConf()
       .setAppName("GSP")

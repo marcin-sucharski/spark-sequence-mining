@@ -12,3 +12,24 @@ case class Taxonomy[ItemType](
   ancestor: ItemType,
   descendants: List[ItemType]
 )
+
+object Domain {
+  type Percent = Double
+  type Support = Percent
+  type SupportCount = Long
+
+  @specialized
+  case class Element[ItemType](
+    items: Set[ItemType]
+  ) extends AnyVal
+
+  object Element {
+    def apply[ItemType](items: ItemType*): Element[ItemType] =
+      Element(Set(items: _*))
+  }
+
+  @specialized
+  case class Pattern[ItemType](
+    elements: Seq[Element[ItemType]]
+  ) extends AnyVal
+}

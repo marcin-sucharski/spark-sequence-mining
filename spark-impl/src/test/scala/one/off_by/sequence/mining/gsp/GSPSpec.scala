@@ -58,6 +58,7 @@ class GSPSpec extends WordSpec
         )).partitionBy(gsp.partitioner)
         val minSupportCount = 2L
 
+        println(gsp.prepareInitialPatterns(input, minSupportCount).toDebugString)
         val result = gsp.prepareInitialPatterns(input, minSupportCount).collect()
 
         result should contain theSameElementsAs List(
@@ -67,11 +68,7 @@ class GSPSpec extends WordSpec
       }
     }
 
-    "have prepareTaxonomies method" which {
-
-    }
-
-    "have prepareInitialSequences method" which {
+    "have generateJoinCandidates method" which {
 
     }
   }
