@@ -30,6 +30,6 @@ object Domain {
 
   @specialized
   case class Pattern[ItemType](
-    elements: Seq[Element[ItemType]]
+    elements: Vector[Element[ItemType]]
   ) extends AnyVal
 }

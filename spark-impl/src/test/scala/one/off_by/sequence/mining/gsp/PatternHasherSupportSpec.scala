@@ -30,7 +30,7 @@ class PatternHasherSupportSpec extends WordSpec
 
     "provide `rawHash` method" which {
       "returns hash for specified pattern" in {
-        val pattern = Pattern(Element(1, 2) :: Element(3, 4) :: Nil)
+        val pattern = Pattern(Vector(Element(1, 2), Element(3, 4)))
         val hash = Hash[Int](1)
 
         implicit val hasher: PatternHasher[Int] = mock[PatternHasher[Int]]
@@ -48,9 +48,9 @@ class PatternHasherSupportSpec extends WordSpec
       implicit val hasher: PatternHasher[Int] = new DefaultPatternHasher[Int]()
 
       "returns PatternWithHash for specified pattern" in {
-        val pattern = Pattern(element_1 :: element_2 :: element_3 :: Nil)
-        val suffix = Pattern(element_2 :: element_3 :: Nil)
-        val prefix = Pattern(element_1 :: element_2 :: Nil)
+        val pattern = Pattern(Vector(element_1, element_2, element_3))
+        val suffix = Pattern(Vector(element_2, element_3))
+        val prefix = Pattern(Vector(element_1, element_2))
 
         val patternWithHash = pattern.hash
 
@@ -62,9 +62,9 @@ class PatternHasherSupportSpec extends WordSpec
       }
 
       "returns PatternWithHash for pattern with length of 2" in {
-        val pattern = Pattern(element_1 :: element_2 :: Nil)
-        val suffix = Pattern(element_2 :: Nil)
-        val prefix = Pattern(element_3 :: Nil)
+        val pattern = Pattern(Vector(element_1, element_2))
+        val suffix = Pattern(Vector(element_2))
+        val prefix = Pattern(Vector(element_1))
 
         val patternWithHash = pattern.hash
 
@@ -76,7 +76,7 @@ class PatternHasherSupportSpec extends WordSpec
       }
 
       "returns PatternWithHash for pattern with length of 1" in {
-        val pattern = Pattern(element_1 :: Nil)
+        val pattern = Pattern(Vector(element_1))
 
         val patternWithHash = pattern.hash
 
@@ -90,6 +90,14 @@ class PatternHasherSupportSpec extends WordSpec
   }
 
   "PatternWithHashSupport" should {
+    "provide `prefixes` method" which {
+
+    }
+
+    "provide `suffixes` method" which {
+
+    }
+
 
   }
 }

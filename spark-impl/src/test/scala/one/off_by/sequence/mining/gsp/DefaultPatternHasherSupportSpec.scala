@@ -17,19 +17,19 @@ class DefaultPatternHasherSupportSpec extends WordSpec
 
     "provide `hash` method" which {
       "returns `nil` for empty pattern" in withHasher[Int] { hasher =>
-        hasher.hash(Pattern(Nil)) shouldBe hasher.nil
+        hasher.hash(Pattern(Vector())) shouldBe hasher.nil
       }
 
       "returns different values for different patterns" in withHasher[Int] { hasher =>
-        val first = Pattern(Element(1, 2) :: Element(3) :: Nil)
-        val second = Pattern(Element(1) :: Element(2, 3) :: Nil)
+        val first = Pattern(Vector(Element(1, 2), Element(3)))
+        val second = Pattern(Vector(Element(1), Element(2, 3)))
 
         hasher.hash(first) shouldNot be(hasher.hash(second))
       }
 
       "returns different values for patterns with elements in different order" in withHasher[Int] { hasher =>
-        val first = Pattern(Element(1, 2) :: Element(3) :: Nil)
-        val second = Pattern(Element(3) :: Element(1, 2) :: Nil)
+        val first = Pattern(Vector(Element(1, 2), Element(3)))
+        val second = Pattern(Vector(Element(3), Element(1, 2)))
 
         hasher.hash(first) shouldNot be(hasher.hash(second))
       }
@@ -37,10 +37,10 @@ class DefaultPatternHasherSupportSpec extends WordSpec
 
     "provide `appendLeft` method" which {
       val element = Element(5, 6)
-      val tailElements = Seq(Element(1, 2), Element(2, 3))
+      val tailElements = Vector(Element(1, 2), Element(2, 3))
 
       "for single element returns same pattern as hash" in withHasher[Int] { hasher =>
-        val pattern = Pattern(element :: Nil)
+        val pattern = Pattern(Vector(element))
 
         hasher.appendLeft(element, hasher.nil) shouldBe hasher.hash(pattern)
       }
