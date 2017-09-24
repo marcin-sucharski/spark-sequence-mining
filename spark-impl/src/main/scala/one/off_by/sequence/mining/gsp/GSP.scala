@@ -56,32 +56,20 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   private[gsp] def prepareInitialPatterns(
     sequences: RDD[(SequenceId, TransactionType)],
     minSupportCount: Long
-  ): RDD[(Pattern, SupportCount)] =
+  ): RDD[(Pattern, SupportCount)] = {
+    require(sequences.partitioner contains partitioner)
     sequences
-      .mapValues(t => Element(t.items))
+      .flatMapValues(_.items.map(Element(_)))
       .mapPartitions(_.toSet.toIterator, preservesPartitioning = true)
       .values
-      .map(element => (Pattern(element :: Nil), 1L))
+      .map(element => (Pattern(Vector(element)), 1L))
       .reduceByKey(_ + _)
       .filter(_._2 >= minSupportCount)
+  }
 
   private[gsp] def generateJoinCandidates(in: RDD[Pattern]): GSP.JoinCandidatesResult[ItemType] =
     ???
 
-
-  private[gsp] def prepareInitialSequences(
-    transactions: RDD[TransactionType],
-    minSupportCount: Long
-  ): RDD[Pattern] =
-    transactions
-      .map(t => (t.sequenceId, t))
-      .partitionBy(new HashPartitioner(sc.defaultMinPartitions))
-      .flatMapValues(_.items.subsets.filter(_.nonEmpty))
-      .distinct()
-      .map(p => (Element(p._2), 1L))
-      .reduceByKey(_ + _)
-      .filter(_._2 >= minSupportCount)
-      .map { case (a, b) => Pattern(a :: Nil) }
 
   private[gsp] def prepareTaxonomies(
     taxonomies: RDD[TaxonomyType]

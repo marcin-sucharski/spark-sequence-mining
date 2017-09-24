@@ -4,7 +4,7 @@ import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 import one.off_by.testkit.DefaultPatternHasherHelper
 import org.scalatest.{Matchers, WordSpec}
 
-class DefaultPatternHasherSupportSpec extends WordSpec
+class DefaultPatternHasherSpec extends WordSpec
   with Matchers
   with DefaultPatternHasherHelper {
 
@@ -17,7 +17,7 @@ class DefaultPatternHasherSupportSpec extends WordSpec
 
     "provide `hash` method" which {
       "returns `nil` for empty pattern" in withHasher[Int] { hasher =>
-        hasher.hash(Pattern(Vector())) shouldBe hasher.nil
+        hasher.hash(Pattern(Vector[Element[Int]]())) shouldBe hasher.nil
       }
 
       "returns different values for different patterns" in withHasher[Int] { hasher =>
@@ -35,21 +35,21 @@ class DefaultPatternHasherSupportSpec extends WordSpec
       }
     }
 
-    "provide `appendLeft` method" which {
+    "provide `appendRight` method" which {
       val element = Element(5, 6)
-      val tailElements = Vector(Element(1, 2), Element(2, 3))
+      val prefixElements = Vector(Element(1, 2), Element(2, 3))
 
       "for single element returns same pattern as hash" in withHasher[Int] { hasher =>
         val pattern = Pattern(Vector(element))
 
-        hasher.appendLeft(element, hasher.nil) shouldBe hasher.hash(pattern)
+        hasher.appendRight(hasher.nil, element) shouldBe hasher.hash(pattern)
       }
 
       "correctly extends pattern with an element" in withHasher[Int] { hasher =>
-        val initialPattern = Pattern(tailElements)
-        val extendedPattern = Pattern(element +: tailElements)
+        val initialPattern = Pattern(prefixElements)
+        val extendedPattern = Pattern(prefixElements :+ element)
 
-        hasher.appendLeft(element, hasher.hash(initialPattern)) shouldBe hasher.hash(extendedPattern)
+        hasher.appendRight(hasher.hash(initialPattern), element) shouldBe hasher.hash(extendedPattern)
       }
     }
   }

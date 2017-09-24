@@ -1,5 +1,6 @@
 package one.off_by.sequence.mining.gsp
 
+import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 import one.off_by.testkit.SparkTestBase
 import org.scalatest.{Inspectors, Matchers, WordSpec}
 
@@ -14,13 +15,13 @@ class GSPSpec extends WordSpec
 
     "have prepareInitialPatterns method" which {
       "returns empty RDD for empty RDD" in withGSP { gsp =>
-        val input = sc.parallelize(List[(SequenceId, gsp.TransactionType)]())
+        val input = sc.parallelize(List[(SequenceId, gsp.TransactionType)]()).partitionBy(gsp.partitioner)
         val minSupportCount = 0L
 
         gsp.prepareInitialPatterns(input, minSupportCount) should be(empty)
       }
 
-      "returns all transactions if min support is zero" in withGSP { gsp =>
+      "returns all transactions if min support is one" in withGSP { gsp =>
         val firstItem = Set(1)
         val secondItem = Set(2)
         val thirdItem = Set(3, 4)
@@ -33,12 +34,15 @@ class GSPSpec extends WordSpec
 
         val result = gsp.prepareInitialPatterns(input, minSupportCount).collect()
 
-        result should have length 3
         forAll(result.map(_._2)) { support =>
           support shouldBe 1L
         }
-        val patterns = List(firstItem :: Nil, secondItem :: Nil, thirdItem :: Nil)
-        result.map(_._1) should contain theSameElementsAs patterns
+        result.map(_._1) should contain theSameElementsAs List(
+          Pattern(Vector(Element(1))),
+          Pattern(Vector(Element(2))),
+          Pattern(Vector(Element(3))),
+          Pattern(Vector(Element(4)))
+        )
       }
 
       "do not return initial patterns with support below min support" in withGSP { gsp =>
@@ -58,12 +62,12 @@ class GSPSpec extends WordSpec
         )).partitionBy(gsp.partitioner)
         val minSupportCount = 2L
 
-        println(gsp.prepareInitialPatterns(input, minSupportCount).toDebugString)
         val result = gsp.prepareInitialPatterns(input, minSupportCount).collect()
 
         result should contain theSameElementsAs List(
-          (secondItem :: Nil, 2L),
-          (thirdItem :: Nil, 3L)
+          (Pattern(Vector(Element(2))), 2L),
+          (Pattern(Vector(Element(3))), 3L),
+          (Pattern(Vector(Element(4))), 3L)
         )
       }
     }

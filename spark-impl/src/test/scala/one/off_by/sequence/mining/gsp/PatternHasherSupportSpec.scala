@@ -18,9 +18,9 @@ class PatternHasherSupportSpec extends WordSpec
         val newHash = Hash[Int](2)
 
         implicit val hasher: PatternHasher[Int] = mock[PatternHasher[Int]]
-        (hasher.appendLeft _).expects(element, hash).returns(newHash)
+        (hasher.appendRight _).expects(hash, element).returns(newHash)
 
-        element ##: hash shouldBe newHash
+        hash :## element shouldBe newHash
       }
     }
   }
@@ -34,7 +34,7 @@ class PatternHasherSupportSpec extends WordSpec
         val hash = Hash[Int](1)
 
         implicit val hasher: PatternHasher[Int] = mock[PatternHasher[Int]]
-        hasher.hash _ expects pattern returns hash
+        (hasher.hash(_: Pattern[Int])) expects pattern returns hash
 
         pattern.rawHash shouldBe hash
       }
@@ -49,30 +49,20 @@ class PatternHasherSupportSpec extends WordSpec
 
       "returns PatternWithHash for specified pattern" in {
         val pattern = Pattern(Vector(element_1, element_2, element_3))
-        val suffix = Pattern(Vector(element_2, element_3))
-        val prefix = Pattern(Vector(element_1, element_2))
 
         val patternWithHash = pattern.hash
 
         patternWithHash.pattern shouldBe pattern
         patternWithHash.hash shouldBe hasher.hash(pattern)
-        patternWithHash.lastElement shouldBe element_3
-        patternWithHash.prefixElementsHash shouldBe hasher.hash(prefix)
-        patternWithHash.suffixElementsHash shouldBe hasher.hash(suffix)
       }
 
       "returns PatternWithHash for pattern with length of 2" in {
         val pattern = Pattern(Vector(element_1, element_2))
-        val suffix = Pattern(Vector(element_2))
-        val prefix = Pattern(Vector(element_1))
 
         val patternWithHash = pattern.hash
 
         patternWithHash.pattern shouldBe pattern
         patternWithHash.hash shouldBe hasher.hash(pattern)
-        patternWithHash.lastElement shouldBe element_2
-        patternWithHash.prefixElementsHash shouldBe hasher.hash(prefix)
-        patternWithHash.suffixElementsHash shouldBe hasher.hash(suffix)
       }
 
       "returns PatternWithHash for pattern with length of 1" in {
@@ -82,22 +72,7 @@ class PatternHasherSupportSpec extends WordSpec
 
         patternWithHash.pattern shouldBe pattern
         patternWithHash.hash shouldBe hasher.hash(pattern)
-        patternWithHash.lastElement shouldBe element_1
-        patternWithHash.prefixElementsHash shouldBe hasher.nil
-        patternWithHash.suffixElementsHash shouldBe hasher.nil
       }
     }
-  }
-
-  "PatternWithHashSupport" should {
-    "provide `prefixes` method" which {
-
-    }
-
-    "provide `suffixes` method" which {
-
-    }
-
-
   }
 }

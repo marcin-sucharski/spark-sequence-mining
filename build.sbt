@@ -20,5 +20,6 @@ lazy val sparkImpl = (project in file("spark-impl"))
 
       "org.scalatest" %% "scalatest" % "3.0.1" % Test,
       "org.scalamock" %% "scalamock-scalatest-support" % "3.6.0" % Test
-    )
+    ),
+    scalacOptions ++= Seq("-optimize", "-Yinline-warnings")
   ))
