@@ -1,8 +1,113 @@
 package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
+import org.apache.spark.Partitioner
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.rdd.RDD
+
+@specialized
+private[gsp] class PatternJoiner[ItemType](
+  hasher: Broadcast[PatternHasher[ItemType]],
+  partitioner: Partitioner
+) {
+
+  import PatternJoiner._
+
+  def generateCandidates(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
+    pruneMatches(joinPatterns(patterns), patterns)
+  }
+
+  private[gsp] def joinPatterns(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
+    val localHasher = hasher
+
+    val prefixes = patterns
+      .flatMap { pattern =>
+        implicit val hasher: PatternHasher[ItemType] = localHasher.value
+        pattern.prefixes
+      }
+      .map { p =>
+        implicit val hasher: PatternHasher[ItemType] = localHasher.value
+        (p.pattern.hash, p)
+      }
+      .partitionBy(partitioner)
+
+    val suffixes = patterns
+      .flatMap { pattern =>
+        implicit val hasher: PatternHasher[ItemType] = localHasher.value
+        pattern.suffixes
+      }
+      .map(p => (p.pattern.hash, p))
+
+    (prefixes join suffixes filter { case (_, (prefix, suffix)) =>
+      prefix.pattern.pattern == suffix.pattern.pattern
+    }).collect().foreach(x => println(x))
+
+    prefixes join suffixes filter { case (_, (prefix, suffix)) =>
+      prefix.pattern.pattern == suffix.pattern.pattern
+    } map { case (_, (prefix, suffix)) =>
+      val common = prefix.pattern.pattern.elements
+      val lastIndex = common.size - 1
+      val elements = (prefix.joinItem, suffix.joinItem) match {
+        case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
+          Element(prefixItem) +: common :+ Element(suffixItem)
+
+        case (JoinItemExistingElement(suffixItem), JoinItemNewElement(prefixItem)) =>
+          Element(prefixItem) +: common.updated(lastIndex, common(lastIndex) + suffixItem)
+
+        case (JoinItemNewElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
+          common.updated(0, common(0) + prefixItem) :+ Element(suffixItem)
+
+        case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
+          common.updated(0, common(0) + prefixItem).updated(lastIndex, common(lastIndex) + suffixItem)
+      }
+      Pattern(elements)
+    } distinct()
+  }
+
+  private[gsp] def pruneMatches(
+    matches: RDD[Pattern[ItemType]],
+    source: RDD[Pattern[ItemType]]
+  ): RDD[Pattern[ItemType]] = {
+    import PatternHasher._
+
+    val localHasher = hasher
+
+    val sourceWithHash = source map { pattern =>
+      implicit val hasher: PatternHasher[ItemType] = localHasher.value
+      val result = pattern.hash
+      (result.hash, result)
+    } partitionBy partitioner
+
+    val subsequences = matches
+      .flatMap { pattern =>
+        implicit val hasher: PatternHasher[ItemType] = localHasher.value
+
+        pattern.elements.indices flatMap { index =>
+          if (pattern.elements(index).items.size > 1) {
+            allSubsetsWithoutSingleItem(pattern.elements(index).items).map(_._2) map { newElement =>
+              val result = Pattern(pattern.elements.updated(index, newElement)).hash
+              (result.hash, (pattern, result))
+            }
+          } else Nil
+        }
+      }
+
+    sourceWithHash join subsequences filter { case (_, (sourcePattern, (_, subsequencePattern))) =>
+      sourcePattern == subsequencePattern
+    } map { case (_, (_, (matchedPattern, _))) =>
+      (matchedPattern, 1)
+    } reduceByKey(partitioner, _ + _) filter { case (pattern, count) =>
+      val expectedCount = pattern.elements.map(elements => {
+        if (elements.items.size > 1) elements.items.size
+        else 0
+      }).sum
+      count == expectedCount
+    } map(_._1)
+  }
+}
 
 private[gsp] object PatternJoiner {
+
   import PatternHasher._
 
   /**
@@ -28,6 +133,7 @@ private[gsp] object PatternJoiner {
   @specialized
   sealed trait PrefixSuffixResult[ItemType] {
     def pattern: PatternWithHash[ItemType]
+
     def joinItem: JoinItem[ItemType]
   }
 
@@ -84,8 +190,8 @@ private[gsp] object PatternJoiner {
           makeResult(addLast(withoutTargetPattern, lastElement), JoinItemExistingElement(item)) :: Nil
       }
     }
-
-    private def allSubsetsWithoutSingleItem(set: Set[ItemType]): Seq[(ItemType, Element[ItemType])] =
-      set.toSeq.map(item => (item, Element(set - item)))
   }
+
+  private[gsp] def allSubsetsWithoutSingleItem[T](set: Set[T]): Seq[(T, Element[T])] =
+    set.toSeq.map(item => (item, Element(set - item)))
 }

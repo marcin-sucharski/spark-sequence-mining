@@ -1,10 +1,73 @@
 package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
-import one.off_by.testkit.DefaultPatternHasherHelper
-import org.scalatest.{Matchers, WordSpec}
+import one.off_by.testkit.{DefaultPatternHasherHelper, SparkTestBase}
+import org.apache.spark.{HashPartitioner, Partitioner}
+import org.scalatest.{Inspectors, Matchers, WordSpec}
 
 class PatternJoinerSpec extends WordSpec
+  with Matchers
+  with Inspectors
+  with SparkTestBase {
+
+  "PatternJoiner" should {
+    val sourcePatterns = List(
+      Pattern(Vector(Element(1, 2), Element(3))),
+      Pattern(Vector(Element(1, 2), Element(4))),
+      Pattern(Vector(Element(1), Element(3, 4))),
+      Pattern(Vector(Element(1, 3), Element(5))),
+      Pattern(Vector(Element(2), Element(3, 4))),
+      Pattern(Vector(Element(2), Element(3), Element(5)))
+    )
+    val afterJoinPatterns = List(
+      Pattern(Vector(Element(1, 2), Element(3, 4))),
+      Pattern(Vector(Element(1, 2), Element(3), Element(5)))
+    )
+    val afterPruningPatterns = List(
+      Pattern(Vector(Element(1, 2), Element(3, 4)))
+    )
+
+    "provide `generateCandidates` method" which {
+      "generates correct candidates set with join and prune" in withPatternJoiner[Int] { joiner =>
+        val source = sc.parallelize(sourcePatterns)
+
+        val result = joiner.generateCandidates(source).collect()
+
+        result should contain theSameElementsAs afterPruningPatterns
+      }
+    }
+
+    "have internal `joinPatterns` method" which {
+      "generates candidates by joining source patterns" in withPatternJoiner[Int] { joiner =>
+        val source = sc.parallelize(sourcePatterns)
+
+        val result = joiner.joinPatterns(source).collect()
+
+        result should contain theSameElementsAs afterJoinPatterns
+      }
+    }
+
+    "have internal `pruneMatches` method" which {
+      "filters out matches with subsequences not in source" in withPatternJoiner[Int] { joiner =>
+        val source = sc.parallelize(sourcePatterns)
+        val afterJoin = sc.parallelize(afterJoinPatterns)
+
+        val result = joiner.pruneMatches(afterJoin, source).collect()
+
+        result should contain theSameElementsAs afterPruningPatterns
+      }
+    }
+  }
+
+  private val partitioner: Partitioner = new HashPartitioner(4)
+
+  private def withPatternJoiner[ItemType](f: PatternJoiner[ItemType] => Unit): Unit = {
+    val hasher = sc.broadcast[PatternHasher[ItemType]](new DefaultPatternHasher[ItemType]())
+    f(new PatternJoiner[ItemType](hasher, partitioner))
+  }
+}
+
+class PatternWithHashSupportSpec extends WordSpec
   with Matchers
   with DefaultPatternHasherHelper {
 

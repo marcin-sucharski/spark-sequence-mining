@@ -21,7 +21,10 @@ object Domain {
   @specialized
   case class Element[ItemType](
     items: Set[ItemType]
-  ) extends AnyVal
+  ) extends AnyVal {
+    def +(item: ItemType): Element[ItemType] =
+      Element(items + item)
+  }
 
   object Element {
     def apply[ItemType](items: ItemType*): Element[ItemType] =

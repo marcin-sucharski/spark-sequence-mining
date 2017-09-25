@@ -3,7 +3,7 @@ package one.off_by.sequence.mining.gsp
 import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 
 @specialized
-trait PatternHasher[ItemType] {
+trait PatternHasher[ItemType] extends Serializable {
 
   import Domain._
 
