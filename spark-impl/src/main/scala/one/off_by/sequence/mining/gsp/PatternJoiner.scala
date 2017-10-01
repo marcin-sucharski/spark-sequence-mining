@@ -1,6 +1,5 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 import org.apache.spark.Partitioner
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD

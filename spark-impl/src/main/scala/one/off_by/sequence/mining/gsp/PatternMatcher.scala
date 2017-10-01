@@ -35,6 +35,7 @@ private[gsp] class PatternMatcher[ItemType : ClassTag, TimeType : ClassTag, Sequ
       .persist(StorageLevel.MEMORY_AND_DISK)
   }
 
+
 }
 
 private[gsp] object PatternMatcher {

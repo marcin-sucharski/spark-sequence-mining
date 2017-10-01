@@ -1,7 +1,5 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
-
 @specialized
 trait PatternHasher[ItemType] extends Serializable {
 
@@ -87,6 +85,6 @@ class DefaultPatternHasher[ItemType] extends PatternHasher[ItemType] {
   override def hashSeq(in: Seq[Element[ItemType]]): Hash[ItemType] =
     (nil /: in)(appendRight)
 
-  override def appendRight(hash: Hash[ItemType], element: Domain.Element[ItemType]): Hash[ItemType] =
+  override def appendRight(hash: Hash[ItemType], element: Element[ItemType]): Hash[ItemType] =
     Hash[ItemType](Integer.rotateLeft(hash.value, 1) ^ element.##)
 }

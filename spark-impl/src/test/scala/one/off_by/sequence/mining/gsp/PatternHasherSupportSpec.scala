@@ -1,6 +1,5 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{Matchers, WordSpec}
 

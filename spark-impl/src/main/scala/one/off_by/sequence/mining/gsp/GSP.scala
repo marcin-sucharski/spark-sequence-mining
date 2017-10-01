@@ -1,6 +1,5 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
@@ -28,9 +27,6 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   type TaxonomyType = Taxonomy[ItemType]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
 
-  type Element = Domain.Element[ItemType]
-  type Pattern = Domain.Pattern[ItemType]
-
   assert(sc.getConf.contains("spark.default.parallelism"))
   private[gsp] val partitioner: Partitioner =
     new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2) * 4)
@@ -40,7 +36,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     minSupport: Percent,
     maybeTaxonomies: Option[RDD[TaxonomyType]] = None,
     maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None
-  ): RDD[(Pattern, Support)] = {
+  ): RDD[(Pattern[ItemType], Support)] = {
     val sequences: RDD[(SequenceId, TransactionType)] = transactions
       .map(t => (t.sequenceId, t))
       .partitionBy(partitioner)
@@ -56,7 +52,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   private[gsp] def prepareInitialPatterns(
     sequences: RDD[(SequenceId, TransactionType)],
     minSupportCount: Long
-  ): RDD[(Pattern, SupportCount)] = {
+  ): RDD[(Pattern[ItemType], SupportCount)] = {
     require(sequences.partitioner contains partitioner)
     sequences
       .flatMapValues(_.items.map(Element(_)))
@@ -67,7 +63,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
       .filter(_._2 >= minSupportCount)
   }
 
-  private[gsp] def generateJoinCandidates(in: RDD[Pattern]): GSP.JoinCandidatesResult[ItemType] =
+  private[gsp] def generateJoinCandidates(in: RDD[Pattern[ItemType]]): GSP.JoinCandidatesResult[ItemType] =
     ???
 
 

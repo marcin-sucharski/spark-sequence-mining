@@ -1,6 +1,5 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.sequence.mining.gsp.Domain.{Element, Pattern}
 import one.off_by.testkit.SparkTestBase
 import org.scalatest.{Inspectors, Matchers, WordSpec}
 
