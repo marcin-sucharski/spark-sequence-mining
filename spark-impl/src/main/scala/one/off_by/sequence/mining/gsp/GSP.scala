@@ -11,9 +11,7 @@ case class GSPOptions[TimeType, DurationType](
   windowSize: Option[DurationType] = None,
   minGap: Option[DurationType] = None,
   maxGap: Option[DurationType] = None
-) {
-  assert(windowSize.isDefined || minGap.isDefined || maxGap.isDefined)
-}
+)
 
 @specialized
 class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](

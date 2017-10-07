@@ -5,12 +5,15 @@ import org.apache.spark.Partitioner
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
+import scala.annotation.tailrec
+import scala.collection.Searching
 import scala.collection.immutable.HashMap
 import scala.reflect.ClassTag
 
-private[gsp] class PatternMatcher[ItemType : ClassTag, TimeType : ClassTag, SequenceId : ClassTag](
+private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: ClassTag](
   partitioner: Partitioner,
-  sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])]
+  sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
+  gspOptions: Option[GSPOptions[TimeType, DurationType]]
 )(implicit timeOrdering: Ordering[TimeType]) {
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
@@ -35,7 +38,16 @@ private[gsp] class PatternMatcher[ItemType : ClassTag, TimeType : ClassTag, Sequ
       .persist(StorageLevel.MEMORY_AND_DISK)
   }
 
+  private[gsp] def matches(pattern: Pattern[ItemType], seq: SearchableSequenceType): Boolean = {
+    case class State(
 
+    )
+
+
+
+
+    ???
+  }
 }
 
 private[gsp] object PatternMatcher {
@@ -45,5 +57,38 @@ private[gsp] object PatternMatcher {
   case class SearchableSequence[ItemType, TimeType, SequenceId](
     id: SequenceId,
     items: Map[ItemType, OrderedItemOccurrenceList[TimeType]]
-  )
+  ) {
+    def findFirstOccurrence(item: ItemType): Option[TimeType] =
+      items.get(item).flatMap(_.headOption)
+
+    def findFirstOccurrenceAfter(
+      time: TimeType,
+      item: ItemType
+    )(implicit timeOrdering: Ordering[TimeType]): Option[TimeType] =
+      items.get(item) flatMap { orderedItemsOfType =>
+        findFirstAfter(orderedItemsOfType, time)
+      }
+
+    @tailrec
+    private def findFirstAfter(
+      sequence: OrderedItemOccurrenceList[TimeType],
+      time: TimeType
+    )(implicit timeOrdering: Ordering[TimeType]): Option[TimeType] = {
+      assert(sequence.nonEmpty)
+      val idx = (sequence.size - 1) / 2
+      sequence(idx) match {
+        case value if timeOrdering.equiv(value, time) =>
+          sequence.lift(idx + 1)
+
+        case value if timeOrdering.gt(value, time) =>
+          if (idx == 0) Some(sequence(0))
+          else findFirstAfter(sequence.take(idx + 1), time)
+
+        case value if timeOrdering.lt(value, time) =>
+          if (sequence.size == 1) None
+          else findFirstAfter(sequence.drop(idx + 1), time)
+      }
+    }
+  }
+
 }
