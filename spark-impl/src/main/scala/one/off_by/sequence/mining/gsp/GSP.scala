@@ -18,7 +18,7 @@ case class GSPTypeSupport[TimeType, DurationType](
   timeDistance: (TimeType, TimeType) => DurationType,
   timeSubtract: (TimeType, DurationType) => TimeType,
   timeAdd: (TimeType, DurationType) => TimeType
-)(implicit durationOrdering: Ordering[DurationType])
+)(implicit val durationOrdering: Ordering[DurationType])
 
 @specialized
 class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](

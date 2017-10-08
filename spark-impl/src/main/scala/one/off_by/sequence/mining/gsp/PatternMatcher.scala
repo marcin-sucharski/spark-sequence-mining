@@ -6,6 +6,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
 import scala.annotation.tailrec
+import scala.collection.Searching
 import scala.collection.immutable.HashMap
 import scala.reflect.ClassTag
 
@@ -40,6 +41,20 @@ private[gsp] object PatternMatcher {
   ) {
     def findFirstOccurrence(item: ItemType): Option[TimeType] =
       items.get(item).flatMap(_.headOption)
+
+    def findFirstOccurrenceSameOrAfter(
+      time: TimeType,
+      item: ItemType
+    )(implicit timeOrdering: Ordering[TimeType]): Option[TimeType] =
+      items.get(item) flatMap { orderedItemsOfType =>
+        import Searching._
+        orderedItemsOfType.search(time) match {
+          case Found(_)              => Some(time)
+          case InsertionPoint(index) =>
+            if (index >= orderedItemsOfType.size) None
+            else Some(orderedItemsOfType(index))
+        }
+      }
 
     def findFirstOccurrenceAfter(
       time: TimeType,
@@ -90,22 +105,72 @@ private[gsp] object PatternMatcher {
   }
 
   @specialized
+  case class MinTime[TimeType](
+    time: TimeType,
+    inclusive: Boolean
+  )
+
+  @specialized
   def matches[ItemType, TimeType, DurationType, SequenceId](
     pattern: Pattern[ItemType],
     seq: SearchableSequence[ItemType, TimeType, SequenceId],
-    zeroTime: TimeType,
     gspOptions: Option[GSPOptions[TimeType, DurationType]]
-  ): Boolean = {
+  )(implicit timeOrdering: Ordering[TimeType]): Boolean = {
     trait PatternExtendResult
     case object PatternExtendSuccess extends PatternExtendResult
-    case class PatternExtendBacktrace(minTime: TimeType) extends PatternExtendResult
+    case class PatternExtendBacktrace(minTime: MinTime[TimeType]) extends PatternExtendResult
     case object PatternExtendFailure extends PatternExtendResult
 
-    def extend(timePosition: TimeType, rest: Pattern[ItemType]): PatternExtendResult = {
-      ???
-    }
+    val firstElementTime = seq.items.view.map(_._2.head).min
+    val lastElementTime = seq.items.view.map(_._2.last).max
 
-    extend(zeroTime, pattern) match {
+    val elementFinder: ElementFinder[ItemType, TimeType] = gspOptions collect {
+      case GSPOptions(typeSupport, Some(windowSize), _, _) =>
+        import typeSupport.durationOrdering
+        new SlidingWindowElementFinder[ItemType, TimeType, SequenceId, DurationType](seq, windowSize, typeSupport)
+    } getOrElse new SimpleElementFinder[ItemType, TimeType, SequenceId](seq)
+
+    val applyMinGap: TimeType => MinTime[TimeType] = gspOptions collect {
+      case GSPOptions(typeSupport, _, Some(minGap), _) =>
+        (endTime: TimeType) => MinTime(typeSupport.timeAdd(endTime, minGap), inclusive = true)
+    } getOrElse ((endTime: TimeType) => MinTime(endTime, inclusive = false))
+
+    // returns max start time for next element
+    val applyMaxGap: TimeType => TimeType = gspOptions collect {
+      case GSPOptions(typeSupport, _, _, Some(maxGap)) =>
+        typeSupport.timeAdd(_: TimeType, maxGap)
+    } getOrElse (_ => lastElementTime)
+
+    // returns minimum time of previous element
+    val applyMaxGapBack: TimeType => TimeType = gspOptions collect {
+      case GSPOptions(typeSupport, _, _, Some(maxGap)) =>
+        typeSupport.timeSubtract(_: TimeType, maxGap)
+    } getOrElse (_ => firstElementTime)
+
+    def extend(minTime: MinTime[TimeType], maxTime: TimeType, rest: Pattern[ItemType]): PatternExtendResult =
+      if (rest.elements.isEmpty) PatternExtendSuccess
+      else {
+        val element = rest.elements.head
+        println(s"searching for $element from $minTime")
+        elementFinder.find(minTime, element) match {
+          case Some((startTime, endTime)) if timeOrdering.gt(startTime, maxTime) =>
+            println(s"found - backtrace from $endTime with minTime = ${applyMaxGapBack(startTime)}")
+            PatternExtendBacktrace(MinTime(applyMaxGapBack(startTime), inclusive = true))
+
+          case Some((_, endTime)) =>
+            println(s"found - extending; newFrom = ${applyMinGap(endTime)}; endTime = $endTime")
+            extend(applyMinGap(endTime), applyMaxGap(endTime), Pattern(rest.elements.tail)) match {
+              case PatternExtendBacktrace(newMinTime) => extend(newMinTime, maxTime, rest)
+              case x                                  => x
+            }
+
+          case None =>
+            println("not found")
+            PatternExtendFailure
+        }
+      }
+
+    extend(MinTime(firstElementTime, inclusive = true), lastElementTime, pattern) match {
       case PatternExtendSuccess => true
       case _                    => false
     }
@@ -116,24 +181,41 @@ private[gsp] object PatternMatcher {
     type TransactionStartTime = TimeType
     type TransactionEndTime = TimeType
 
-    def find(minTime: TimeType, element: Element[ItemType]): Option[(TransactionStartTime, TransactionEndTime)]
+    def find(minTime: MinTime[TimeType], element: Element[ItemType]): Option[(TransactionStartTime, TransactionEndTime)]
+  }
+
+  @specialized
+  trait FindFirstHelper[ItemType, TimeType, SequenceId] {
+    def sequence: SearchableSequence[ItemType, TimeType, SequenceId]
+
+    implicit def timeOrdering: Ordering[TimeType]
+
+    protected def findFirst(minTime: MinTime[TimeType], item: ItemType): Option[TimeType] =
+      if (minTime.inclusive) sequence.findFirstOccurrenceSameOrAfter(minTime.time, item)
+      else sequence.findFirstOccurrenceAfter(minTime.time, item)
   }
 
   @specialized
   class SimpleElementFinder[ItemType, TimeType, SequenceId](
-    sequence: SearchableSequence[ItemType, TimeType, SequenceId]
-  )(implicit timeOrdering: Ordering[TimeType]) extends ElementFinder[ItemType, TimeType] {
+    val sequence: SearchableSequence[ItemType, TimeType, SequenceId]
+  )(implicit val timeOrdering: Ordering[TimeType]) extends ElementFinder[ItemType, TimeType]
+    with FindFirstHelper[ItemType, TimeType, SequenceId] {
+
     @tailrec
     final override def find(
-      minTime: TimeType,
+      minTime: MinTime[TimeType],
       element: Element[ItemType]
     ): Option[(TransactionStartTime, TransactionEndTime)] =
-      sequence.findFirstOccurrenceAfter(minTime, element.items.head) match {
+      findFirst(minTime, element.items.head) match {
         case Some(time) =>
-          val times = element.items.tail.map(sequence.findFirstOccurrenceAfter(minTime, _))
+          val times = element.items.tail.map(findFirst(minTime, _))
           if (times.forall(_.isDefined)) {
             val sameTransaction = times.forall(_.contains(time))
-            if (sameTransaction) Some((time, time)) else find(time, element)
+            if (sameTransaction) Some((time, time))
+            else {
+              val newMinTime = MinTime(timeOrdering.max(times.view.flatten.max, time), inclusive = true)
+              find(newMinTime, element)
+            }
           } else None
 
         case None => None
@@ -142,31 +224,34 @@ private[gsp] object PatternMatcher {
 
   @specialized
   class SlidingWindowElementFinder[ItemType, TimeType, SequenceId, DurationType](
-    sequence: SearchableSequence[ItemType, TimeType, SequenceId],
+    val sequence: SearchableSequence[ItemType, TimeType, SequenceId],
     windowSize: DurationType,
     typeSupport: GSPTypeSupport[TimeType, DurationType]
   )(implicit
-    timeOrdering: Ordering[TimeType],
+    val timeOrdering: Ordering[TimeType],
     durationOrdering: Ordering[DurationType]
-  ) extends ElementFinder[ItemType, TimeType] {
+  ) extends ElementFinder[ItemType, TimeType]
+    with FindFirstHelper[ItemType, TimeType, SequenceId] {
 
     private implicit val implicitTypeSupport: GSPTypeSupport[TimeType, DurationType] = typeSupport
+
     import Helper.TimeSupport
 
     @tailrec
     final override def find(
-      minTime: TimeType,
+      minTime: MinTime[TimeType],
       element: Element[ItemType]
     ): Option[(TransactionStartTime, TransactionEndTime)] = {
-      val maybeTimes = element.items.map(sequence.findFirstOccurrenceAfter(minTime, _))
+      val maybeTimes = element.items.map(findFirst(minTime, _))
       if (maybeTimes.forall(_.isDefined)) {
         val first = maybeTimes.view.flatten.min
         val last = maybeTimes.view.flatten.max
         val duration = first distanceTo last
 
         if (durationOrdering.lteq(duration, windowSize)) Some((first, last))
-        else find(last - windowSize, element)
+        else find(MinTime(last - windowSize, inclusive = true), element)
       } else None
     }
   }
+
 }
