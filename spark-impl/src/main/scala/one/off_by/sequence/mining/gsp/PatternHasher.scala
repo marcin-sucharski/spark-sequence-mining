@@ -38,8 +38,6 @@ case class Hash[ItemType](
 
 object PatternHasher {
 
-  import Domain._
-
   @specialized
   case class PatternWithHash[ItemType](
     pattern: Pattern[ItemType],
