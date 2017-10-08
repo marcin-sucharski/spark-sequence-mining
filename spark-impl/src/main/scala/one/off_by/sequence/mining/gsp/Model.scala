@@ -19,6 +19,8 @@ case class Element[ItemType](
 ) extends AnyVal {
   def +(item: ItemType): Element[ItemType] =
     Element(items + item)
+
+  override def toString = items.mkString("(", ", ", ")")
 }
 
 object Element {
@@ -29,7 +31,9 @@ object Element {
 @specialized
 case class Pattern[ItemType](
   elements: Vector[Element[ItemType]]
-) extends AnyVal
+) extends AnyVal {
+  override def toString = elements.mkString("<", "", ">")
+}
 
 object Domain {
   type Percent = Double
