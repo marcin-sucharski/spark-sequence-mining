@@ -191,6 +191,7 @@ private[gsp] object PatternJoiner {
     }
   }
 
+  @specialized
   private[gsp] def allSubsetsWithoutSingleItem[T](set: Set[T]): Seq[(T, Element[T])] =
     set.toSeq.map(item => (item, Element(set - item)))
 }

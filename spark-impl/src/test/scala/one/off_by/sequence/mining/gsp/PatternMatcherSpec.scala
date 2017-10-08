@@ -1,6 +1,6 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
+import one.off_by.sequence.mining.gsp.PatternMatcher.{ElementFinder, SearchableSequence, SimpleElementFinder, SlidingWindowElementFinder}
 import one.off_by.testkit.SparkTestBase
 import org.apache.spark.{HashPartitioner, Partitioner}
 import org.scalatest._
@@ -58,184 +58,21 @@ class PatternMatcherSpec extends FreeSpec
         ).map(x => (x.id, x))
 
         val sequences = sc.parallelize(input)
-        val patternMatcher = new PatternMatcher[Int, Int, Int, Int](partitioner, sequences, None)
+        val patternMatcher = new PatternMatcher[Int, Int, Int, Int](partitioner, sequences, 0, None)
 
         patternMatcher.searchableSequences.collect() should contain theSameElementsAs output
       }
     }
+  }
 
-    "have internal `matches` method which" - {
-      val sequences = List[Transaction[Int, Int, Int]](
-        Transaction(1, 10, Set(1, 2)),
-        Transaction(1, 25, Set(4, 6)),
-        Transaction(1, 45, Set(3)),
-        Transaction(1, 50, Set(1, 2)),
-        Transaction(1, 65, Set(3)),
-        Transaction(1, 90, Set(2, 4)),
-        Transaction(1, 95, Set(6))
-      ).map(t => (t.sequenceId, t))
+  private val partitioner: Partitioner = new HashPartitioner(4)
+}
 
-      "for specified transaction set" - {
+class PatternMatcherCompanionSpec extends FreeSpec
+  with Matchers {
 
-        type MatchesFunction[ItemType] = Pattern[ItemType] => Boolean
-
-        def withMatcher(options: Option[GSPOptions[Int, Int]])(f: MatchesFunction[Int] => Unit): Unit = {
-          val patternMatcher = new PatternMatcher[Int, Int, Int, Int](partitioner, sc.parallelize(sequences), options)
-          f(patternMatcher.matches(_, patternMatcher.searchableSequences.collect.head._2))
-        }
-
-        "with no gsp options" - {
-          val matching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2))),
-            Pattern(Vector(Element(1))),
-            Pattern(Vector(Element(1), Element(3))),
-            Pattern(Vector(Element(4), Element(6))),
-            Pattern(Vector(Element(3), Element(2), Element(3), Element(2))),
-            Pattern(Vector(Element(1, 2), Element(1, 2), Element(6)))
-          )
-          val notMatching = List[Pattern[Int]](
-            Pattern(Vector(Element(8))),
-            Pattern(Vector(Element(1, 2), Element(7))),
-            Pattern(Vector(Element(7), Element(1, 2))),
-            Pattern(Vector(Element(1), Element(1), Element(1), Element(1), Element(1))),
-            Pattern(Vector(Element(1, 2, 6))),
-            Pattern(Vector(Element(4), Element(6)))
-          )
-
-          val emptyOptions = Some(GSPOptions[Int, Int]((a, b) => b - a))
-          for (pattern <- matching) {
-            s"correctly matches $pattern when options are None" in withMatcher(None) { matches =>
-              matches(pattern) shouldBe true
-            }
-
-            s"correctly matches $pattern when options are empty" in withMatcher(emptyOptions) { matches =>
-              matches(pattern) shouldBe true
-            }
-          }
-
-          for (pattern <- notMatching) {
-            s"does not match $pattern when options are None" in withMatcher(None) { matches =>
-              matches(pattern) shouldBe false
-            }
-
-            s"does not match $pattern when options are empty" in withMatcher(emptyOptions) { matches =>
-              matches(pattern) shouldBe false
-            }
-          }
-        }
-
-        "with specified window size" - {
-          val options = Some(GSPOptions[Int, Int]((a, b) => b - a, windowSize = Some(15)))
-
-          val matching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2), Element(4, 6))),
-            Pattern(Vector(Element(1, 2), Element(2, 4))),
-            Pattern(Vector(Element(1, 2, 4, 6))),
-            Pattern(Vector(Element(1, 2, 4), Element(2, 4, 6))),
-            Pattern(Vector(Element(1, 2, 4), Element(1, 2), Element(2, 4, 6)))
-          )
-          val notMatching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2, 4, 6, 3))),
-            Pattern(Vector(Element(1, 3))),
-            Pattern(Vector(Element(4, 6, 3))),
-            Pattern(Vector(Element(4, 6), Element(3, 2, 4)))
-          )
-
-          for (pattern <- matching)
-            s"matches $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe true
-            }
-
-          for (pattern <- notMatching)
-            s"does not $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe false
-            }
-        }
-
-        "with specified min gap" - {
-          val options = Some(GSPOptions[Int, Int]((a, b) => b - a, minGap = Some(20)))
-
-          val matching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2), Element(3))),
-            Pattern(Vector(Element(1, 2), Element(2, 4))),
-            Pattern(Vector(Element(1), Element(6))),
-            Pattern(Vector(Element(4, 6), Element(3)))
-          )
-          val notMatching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2), Element(4, 6))),
-            Pattern(Vector(Element(1), Element(4, 6))),
-            Pattern(Vector(Element(2, 4), Element(6))),
-            Pattern(Vector(Element(3), Element(1, 2)))
-          )
-
-          for (pattern <- matching)
-            s"matches $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe true
-            }
-
-          for (pattern <- notMatching)
-            s"does not match $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe false
-            }
-        }
-
-        "with specified max gap" - {
-          val options = Some(GSPOptions[Int, Int]((a, b) => b - a, maxGap = Some(40)))
-
-          val matching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2), Element(3), Element(3), Element(6))),
-            Pattern(Vector(Element(4, 6), Element(3), Element(2, 4))),
-            Pattern(Vector(Element(6), Element(2), Element(4)))
-          )
-          val notMatching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2), Element(6))),
-            Pattern(Vector(Element(6), Element(6)))
-          )
-
-          for (pattern <- matching)
-            s"matches $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe true
-            }
-
-          for (pattern <- notMatching)
-            s"does not match $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe false
-            }
-        }
-
-        "with all options specified" - {
-          val options = Some(GSPOptions[Int, Int](
-            (a, b) => b - a,
-            windowSize = Some(10),
-            minGap = Some(20),
-            maxGap = Some(40)
-          ))
-
-          val matching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2), Element(3, 1, 2), Element(2, 4))),
-            Pattern(Vector(Element(1, 2), Element(3, 1, 2), Element(2, 4, 6))),
-            Pattern(Vector(Element(4, 6), Element(1, 2), Element(2, 4, 6))),
-            Pattern(Vector(Element(1), Element(3), Element(3), Element(6)))
-          )
-          val notMatching = List[Pattern[Int]](
-            Pattern(Vector(Element(1, 2, 4, 6))),
-            Pattern(Vector(Element(1, 2, 4), Element(2, 4))),
-            Pattern(Vector(Element(1, 2), Element(4, 6))),
-            Pattern(Vector(Element(3), Element(1, 2)))
-          )
-
-          for (pattern <- matching)
-            s"matches $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe true
-            }
-
-          for (pattern <- notMatching)
-            s"does not match $pattern" in withMatcher(options) { matches =>
-              matches(pattern) shouldBe false
-            }
-        }
-      }
-    }
+  "PatternMatcher should" - {
+    val typeSupport = GSPTypeSupport[Int, Int]((a, b) => b - a, _ - _, _ + _)
 
     "have companion object that" - {
       "defines SearchableSequence which" - {
@@ -284,8 +121,265 @@ class PatternMatcherSpec extends FreeSpec
           }
         }
       }
+
+      "have internal `matches` method which" - {
+        val sequence = List[Transaction[Int, Int, Int]](
+          Transaction(1, 10, Set(1, 2)),
+          Transaction(1, 25, Set(4, 6)),
+          Transaction(1, 45, Set(3)),
+          Transaction(1, 50, Set(1, 2)),
+          Transaction(1, 65, Set(3)),
+          Transaction(1, 90, Set(2, 4)),
+          Transaction(1, 95, Set(6))
+        )
+
+        "for specified transaction set" - {
+
+          type MatchesFunction[ItemType] = Pattern[ItemType] => Boolean
+
+          def withMatcher(options: Option[GSPOptions[Int, Int]])(f: MatchesFunction[Int] => Unit): Unit = {
+            val zeroTime = 0
+            f(PatternMatcher.matches[Int, Int, Int, Int](
+              _,
+              PatternMatcher.buildSearchableSequence(sequence),
+              zeroTime,
+              options
+            ))
+          }
+
+          "with no gsp options" - {
+            val matching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2))),
+              Pattern(Vector(Element(1))),
+              Pattern(Vector(Element(1), Element(3))),
+              Pattern(Vector(Element(4), Element(6))),
+              Pattern(Vector(Element(3), Element(2), Element(3), Element(2))),
+              Pattern(Vector(Element(1, 2), Element(1, 2), Element(6)))
+            )
+            val notMatching = List[Pattern[Int]](
+              Pattern(Vector(Element(8))),
+              Pattern(Vector(Element(1, 2), Element(7))),
+              Pattern(Vector(Element(7), Element(1, 2))),
+              Pattern(Vector(Element(1), Element(1), Element(1), Element(1), Element(1))),
+              Pattern(Vector(Element(1, 2, 6))),
+              Pattern(Vector(Element(4), Element(6)))
+            )
+
+            val emptyOptions = Some(GSPOptions[Int, Int](typeSupport))
+            for (pattern <- matching) {
+              s"correctly matches $pattern when options are None" in withMatcher(None) { matches =>
+                matches(pattern) shouldBe true
+              }
+
+              s"correctly matches $pattern when options are empty" in withMatcher(emptyOptions) { matches =>
+                matches(pattern) shouldBe true
+              }
+            }
+
+            for (pattern <- notMatching) {
+              s"does not match $pattern when options are None" in withMatcher(None) { matches =>
+                matches(pattern) shouldBe false
+              }
+
+              s"does not match $pattern when options are empty" in withMatcher(emptyOptions) { matches =>
+                matches(pattern) shouldBe false
+              }
+            }
+          }
+
+          "with specified window size" - {
+            val options = Some(GSPOptions[Int, Int](typeSupport, windowSize = Some(15)))
+
+            val matching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2), Element(4, 6))),
+              Pattern(Vector(Element(1, 2), Element(2, 4))),
+              Pattern(Vector(Element(1, 2, 4, 6))),
+              Pattern(Vector(Element(1, 2, 4), Element(2, 4, 6))),
+              Pattern(Vector(Element(1, 2, 4), Element(1, 2), Element(2, 4, 6)))
+            )
+            val notMatching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2, 4, 6, 3))),
+              Pattern(Vector(Element(1, 3))),
+              Pattern(Vector(Element(4, 6, 3))),
+              Pattern(Vector(Element(4, 6), Element(3, 2, 4)))
+            )
+
+            for (pattern <- matching)
+              s"matches $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe true
+              }
+
+            for (pattern <- notMatching)
+              s"does not $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe false
+              }
+          }
+
+          "with specified min gap" - {
+            val options = Some(GSPOptions[Int, Int](typeSupport, minGap = Some(20)))
+
+            val matching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2), Element(3))),
+              Pattern(Vector(Element(1, 2), Element(2, 4))),
+              Pattern(Vector(Element(1), Element(6))),
+              Pattern(Vector(Element(4, 6), Element(3)))
+            )
+            val notMatching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2), Element(4, 6))),
+              Pattern(Vector(Element(1), Element(4, 6))),
+              Pattern(Vector(Element(2, 4), Element(6))),
+              Pattern(Vector(Element(3), Element(1, 2)))
+            )
+
+            for (pattern <- matching)
+              s"matches $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe true
+              }
+
+            for (pattern <- notMatching)
+              s"does not match $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe false
+              }
+          }
+
+          "with specified max gap" - {
+            val options = Some(GSPOptions[Int, Int](typeSupport, maxGap = Some(40)))
+
+            val matching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2), Element(3), Element(3), Element(6))),
+              Pattern(Vector(Element(4, 6), Element(3), Element(2, 4))),
+              Pattern(Vector(Element(6), Element(2), Element(4)))
+            )
+            val notMatching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2), Element(6))),
+              Pattern(Vector(Element(6), Element(6)))
+            )
+
+            for (pattern <- matching)
+              s"matches $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe true
+              }
+
+            for (pattern <- notMatching)
+              s"does not match $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe false
+              }
+          }
+
+          "with all options specified" - {
+            val options = Some(GSPOptions[Int, Int](
+              typeSupport,
+              windowSize = Some(10),
+              minGap = Some(20),
+              maxGap = Some(40)
+            ))
+
+            val matching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2), Element(3, 1, 2), Element(2, 4))),
+              Pattern(Vector(Element(1, 2), Element(3, 1, 2), Element(2, 4, 6))),
+              Pattern(Vector(Element(4, 6), Element(1, 2), Element(2, 4, 6))),
+              Pattern(Vector(Element(1), Element(3), Element(3), Element(6)))
+            )
+            val notMatching = List[Pattern[Int]](
+              Pattern(Vector(Element(1, 2, 4, 6))),
+              Pattern(Vector(Element(1, 2, 4), Element(2, 4))),
+              Pattern(Vector(Element(1, 2), Element(4, 6))),
+              Pattern(Vector(Element(3), Element(1, 2)))
+            )
+
+            for (pattern <- matching)
+              s"matches $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe true
+              }
+
+            for (pattern <- notMatching)
+              s"does not match $pattern" in withMatcher(options) { matches =>
+                matches(pattern) shouldBe false
+              }
+          }
+        }
+      }
+
+      "defines ElementFinder trait that" - {
+        val searchableSequence = PatternMatcher.buildSearchableSequence(
+          List[Transaction[Int, Int, Int]](
+            Transaction(1, 10, Set(1, 2)),
+            Transaction(1, 25, Set(4, 6)),
+            Transaction(1, 45, Set(3)),
+            Transaction(1, 65, Set(1, 2)),
+            Transaction(1, 90, Set(8, 9))
+          )
+        )
+
+        "has SimpleElementFinder implementation which" - {
+          def withFinder(f: ElementFinder[Int, Int] => Unit): Unit =
+            f(new SimpleElementFinder[Int, Int, Int](searchableSequence))
+
+          "implements `find` method which" - {
+            "finds only subsets of real elements" in withFinder { finder =>
+              finder.find(0, Element(1, 2)) should contain ((10, 10))
+              finder.find(0, Element(2)) should contain ((10, 10))
+              finder.find(0, Element(1)) should contain ((10, 10))
+              finder.find(0, Element(4, 6)) should contain ((25, 25))
+              finder.find(0, Element(6)) should contain ((25, 25))
+              finder.find(0, Element(3)) should contain ((45, 45))
+            }
+
+            "finds elements with minTime" in withFinder { finder =>
+              finder.find(40, Element(1, 2)) should contain ((65, 65))
+              finder.find(40, Element(1)) should contain ((65, 65))
+              finder.find(40, Element(2)) should contain ((65, 65))
+            }
+
+            "does not merge elements" in withFinder { finder =>
+              finder.find(0, Element(1, 2, 4, 6)) shouldNot be (defined)
+            }
+
+            "does not find elements before specified time" in withFinder { finder =>
+              finder.find(70, Element(3)) shouldNot be (defined)
+            }
+
+            "does not find not existing elements" in withFinder { finder =>
+              finder.find(0, Element(10)) shouldNot be (defined)
+            }
+          }
+        }
+
+        "has SlidingWindowElementFinder implementation which" - {
+          "implements `find` method which" - {
+            val windowSize = 20
+
+            def withFinder(f: ElementFinder[Int, Int] => Unit): Unit =
+              f(new SlidingWindowElementFinder[Int, Int, Int, Int](searchableSequence, windowSize, typeSupport))
+
+            "finds subsets of real elements" in withFinder { finder =>
+              finder.find(0, Element(1, 2)) should contain ((10, 10))
+              finder.find(0, Element(1)) should contain ((10, 10))
+              finder.find(0, Element(2)) should contain ((10, 10))
+            }
+
+            "finds elements with specified minTime" in withFinder { finder =>
+              finder.find(20, Element(1, 2)) should contain ((65, 65))
+              finder.find(20, Element(1)) should contain ((65, 65))
+              finder.find(20, Element(2)) should contain ((65, 65))
+            }
+
+            "finds elements spanning multiple real elements" in withFinder { finder =>
+              finder.find(0, Element(1, 2, 4, 6)) should contain ((10, 25))
+              finder.find(0, Element(3, 1, 2)) should contain ((45, 65))
+            }
+
+            "returns None for elements spanning multiple real elements not within window size" in withFinder { finder =>
+              finder.find(0, Element(2, 8, 9)) shouldNot be (defined)
+              finder.find(0, Element(3, 8, 9)) shouldNot be (defined)
+            }
+
+            "returns None for elements with items not in transaction set" in withFinder { finder =>
+              finder.find(0, Element(10)) shouldNot be (defined)
+            }
+          }
+        }
+      }
     }
   }
-
-  private val partitioner: Partitioner = new HashPartitioner(4)
 }

@@ -3,8 +3,6 @@ package one.off_by.sequence.mining.gsp
 @specialized
 trait PatternHasher[ItemType] extends Serializable {
 
-  import Domain._
-
   /**
     * @return Hash for empty pattern.
     */

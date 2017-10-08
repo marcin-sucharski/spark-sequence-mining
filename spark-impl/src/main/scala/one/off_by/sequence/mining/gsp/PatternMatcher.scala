@@ -6,13 +6,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
 import scala.annotation.tailrec
-import scala.collection.Searching
 import scala.collection.immutable.HashMap
 import scala.reflect.ClassTag
 
+@specialized
 private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: ClassTag](
   partitioner: Partitioner,
   sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
+  zeroTime: TimeType,
   gspOptions: Option[GSPOptions[TimeType, DurationType]]
 )(implicit timeOrdering: Ordering[TimeType]) {
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
@@ -22,31 +23,9 @@ private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: 
     implicit val localOrdering: Ordering[TimeType] = timeOrdering
     sequences.groupByKey()
       .mapValues { sequence =>
-        val groupedNotSorted = (HashMap[ItemType, Vector[TimeType]]() /: sequence) { case (hashMap, transaction) =>
-          (hashMap /: transaction.items) { case (hashMapLocal, item) =>
-            val occurrences = hashMapLocal.getOrElse(item, Vector[TimeType]())
-            hashMapLocal.updated(item, occurrences :+ transaction.time)
-          }
-        }
-        SearchableSequence[ItemType, TimeType, SequenceId](
-          sequence.head.sequenceId,
-          groupedNotSorted
-            .mapValues(_.sorted(localOrdering).toIndexedSeq)
-            .map(identity) // https://issues.scala-lang.org/browse/SI-7005
-        )
+        PatternMatcher.buildSearchableSequence(sequence)(localOrdering)
       }
       .persist(StorageLevel.MEMORY_AND_DISK)
-  }
-
-  private[gsp] def matches(pattern: Pattern[ItemType], seq: SearchableSequenceType): Boolean = {
-    case class State(
-
-    )
-
-
-
-
-    ???
   }
 }
 
@@ -54,6 +33,7 @@ private[gsp] object PatternMatcher {
   type OrderedItemOccurrenceList[TimeType] =
     IndexedSeq[TimeType]
 
+  @specialized
   case class SearchableSequence[ItemType, TimeType, SequenceId](
     id: SequenceId,
     items: Map[ItemType, OrderedItemOccurrenceList[TimeType]]
@@ -91,4 +71,102 @@ private[gsp] object PatternMatcher {
     }
   }
 
+  @specialized
+  def buildSearchableSequence[ItemType, TimeType, SequenceId](
+    sequence: Iterable[Transaction[ItemType, TimeType, SequenceId]]
+  )(implicit timeOrdering: Ordering[TimeType]): SearchableSequence[ItemType, TimeType, SequenceId] = {
+    val groupedNotSorted = (HashMap[ItemType, Vector[TimeType]]() /: sequence) { case (hashMap, transaction) =>
+      (hashMap /: transaction.items) { case (hashMapLocal, item) =>
+        val occurrences = hashMapLocal.getOrElse(item, Vector[TimeType]())
+        hashMapLocal.updated(item, occurrences :+ transaction.time)
+      }
+    }
+    SearchableSequence[ItemType, TimeType, SequenceId](
+      sequence.head.sequenceId,
+      groupedNotSorted
+        .mapValues(_.sorted.toIndexedSeq)
+        .map(identity) // https://issues.scala-lang.org/browse/SI-7005
+    )
+  }
+
+  @specialized
+  def matches[ItemType, TimeType, DurationType, SequenceId](
+    pattern: Pattern[ItemType],
+    seq: SearchableSequence[ItemType, TimeType, SequenceId],
+    zeroTime: TimeType,
+    gspOptions: Option[GSPOptions[TimeType, DurationType]]
+  ): Boolean = {
+    trait PatternExtendResult
+    case object PatternExtendSuccess extends PatternExtendResult
+    case class PatternExtendBacktrace(minTime: TimeType) extends PatternExtendResult
+    case object PatternExtendFailure extends PatternExtendResult
+
+    def extend(timePosition: TimeType, rest: Pattern[ItemType]): PatternExtendResult = {
+      ???
+    }
+
+    extend(zeroTime, pattern) match {
+      case PatternExtendSuccess => true
+      case _                    => false
+    }
+  }
+
+  @specialized
+  trait ElementFinder[ItemType, TimeType] {
+    type TransactionStartTime = TimeType
+    type TransactionEndTime = TimeType
+
+    def find(minTime: TimeType, element: Element[ItemType]): Option[(TransactionStartTime, TransactionEndTime)]
+  }
+
+  @specialized
+  class SimpleElementFinder[ItemType, TimeType, SequenceId](
+    sequence: SearchableSequence[ItemType, TimeType, SequenceId]
+  )(implicit timeOrdering: Ordering[TimeType]) extends ElementFinder[ItemType, TimeType] {
+    @tailrec
+    final override def find(
+      minTime: TimeType,
+      element: Element[ItemType]
+    ): Option[(TransactionStartTime, TransactionEndTime)] =
+      sequence.findFirstOccurrenceAfter(minTime, element.items.head) match {
+        case Some(time) =>
+          val times = element.items.tail.map(sequence.findFirstOccurrenceAfter(minTime, _))
+          if (times.forall(_.isDefined)) {
+            val sameTransaction = times.forall(_.contains(time))
+            if (sameTransaction) Some((time, time)) else find(time, element)
+          } else None
+
+        case None => None
+      }
+  }
+
+  @specialized
+  class SlidingWindowElementFinder[ItemType, TimeType, SequenceId, DurationType](
+    sequence: SearchableSequence[ItemType, TimeType, SequenceId],
+    windowSize: DurationType,
+    typeSupport: GSPTypeSupport[TimeType, DurationType]
+  )(implicit
+    timeOrdering: Ordering[TimeType],
+    durationOrdering: Ordering[DurationType]
+  ) extends ElementFinder[ItemType, TimeType] {
+
+    private implicit val implicitTypeSupport: GSPTypeSupport[TimeType, DurationType] = typeSupport
+    import Helper.TimeSupport
+
+    @tailrec
+    final override def find(
+      minTime: TimeType,
+      element: Element[ItemType]
+    ): Option[(TransactionStartTime, TransactionEndTime)] = {
+      val maybeTimes = element.items.map(sequence.findFirstOccurrenceAfter(minTime, _))
+      if (maybeTimes.forall(_.isDefined)) {
+        val first = maybeTimes.view.flatten.min
+        val last = maybeTimes.view.flatten.max
+        val duration = first distanceTo last
+
+        if (durationOrdering.lteq(duration, windowSize)) Some((first, last))
+        else find(last - windowSize, element)
+      } else None
+    }
+  }
 }

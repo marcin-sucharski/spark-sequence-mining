@@ -7,11 +7,18 @@ import scala.reflect.ClassTag
 
 @specialized
 case class GSPOptions[TimeType, DurationType](
-  timeDistance: (TimeType, TimeType) => DurationType,
+  typeSupport: GSPTypeSupport[TimeType, DurationType],
   windowSize: Option[DurationType] = None,
   minGap: Option[DurationType] = None,
   maxGap: Option[DurationType] = None
 )
+
+@specialized
+case class GSPTypeSupport[TimeType, DurationType](
+  timeDistance: (TimeType, TimeType) => DurationType,
+  timeSubtract: (TimeType, DurationType) => TimeType,
+  timeAdd: (TimeType, DurationType) => TimeType
+)(implicit durationOrdering: Ordering[DurationType])
 
 @specialized
 class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
