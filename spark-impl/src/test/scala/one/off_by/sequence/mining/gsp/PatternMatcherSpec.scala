@@ -11,23 +11,23 @@ class PatternMatcherSpec extends FreeSpec
   with SparkTestBase {
 
   "PatternMatcher should" - {
+    val sequences = List[Transaction[Int, Int, Int]](
+      Transaction(1, 1, Set(2)),
+      Transaction(1, 2, Set(3)),
+      Transaction(1, 3, Set(2, 3)),
+      Transaction(1, 4, Set(5)),
+
+      Transaction(2, 1, Set(1)),
+      Transaction(2, 2, Set(1, 2)),
+      Transaction(2, 3, Set(3, 4, 5)),
+
+      Transaction(3, 1, Set(1, 2, 3)),
+      Transaction(3, 2, Set(1, 2, 3)),
+      Transaction(3, 3, Set(1, 2, 3))
+    ).map(t => (t.sequenceId, t))
+
     "have internal `searchableSequences` field which" - {
       "contains correct helper data for searching" in {
-        val input = List[Transaction[Int, Int, Int]](
-          Transaction(1, 1, Set(2)),
-          Transaction(1, 2, Set(3)),
-          Transaction(1, 3, Set(2, 3)),
-          Transaction(1, 4, Set(5)),
-
-          Transaction(2, 1, Set(1)),
-          Transaction(2, 2, Set(1, 2)),
-          Transaction(2, 3, Set(3, 4, 5)),
-
-          Transaction(3, 1, Set(1, 2, 3)),
-          Transaction(3, 2, Set(1, 2, 3)),
-          Transaction(3, 3, Set(1, 2, 3))
-        ).map(t => (t.sequenceId, t))
-
         val output = List[PatternMatcher.SearchableSequence[Int, Int, Int]](
           PatternMatcher.SearchableSequence(
             1,
@@ -55,12 +55,34 @@ class PatternMatcherSpec extends FreeSpec
               3 -> Vector(1, 2, 3)
             )
           )
-        ).map(x => (x.id, x))
+        )
 
-        val sequences = sc.parallelize(input)
-        val patternMatcher = new PatternMatcher[Int, Int, Int, Int](partitioner, sequences, 0, None)
+        val patternMatcher = new PatternMatcher[Int, Int, Int, Int](partitioner, sc.parallelize(sequences), None, 0L)
 
         patternMatcher.searchableSequences.collect() should contain theSameElementsAs output
+      }
+    }
+
+    "have `filter` method which" - {
+      "filters out patterns not conforming to minimum support" in {
+        val input = List[Pattern[Int]](
+          Pattern(Vector(Element(2), Element(3), Element(2))),
+          Pattern(Vector(Element(3), Element(2), Element(5))),
+          Pattern(Vector(Element(1), Element(1), Element(3))),
+          Pattern(Vector(Element(3), Element(2, 3)))
+        )
+
+        val output = List[Pattern[Int]](
+          Pattern(Vector(Element(2), Element(3), Element(2))),
+          Pattern(Vector(Element(1), Element(1), Element(3))),
+          Pattern(Vector(Element(3), Element(2, 3)))
+        )
+
+        val minSupport = 2L
+        val patternMatcher = new PatternMatcher[Int, Int, Int, Int](
+          partitioner,sc.parallelize(sequences), None, minSupport)
+
+        patternMatcher.filter(sc.parallelize(input)).collect() should contain theSameElementsAs output
       }
     }
   }

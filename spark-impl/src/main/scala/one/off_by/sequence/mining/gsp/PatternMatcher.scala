@@ -14,19 +14,38 @@ import scala.reflect.ClassTag
 private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: ClassTag](
   partitioner: Partitioner,
   sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
-  zeroTime: TimeType,
-  gspOptions: Option[GSPOptions[TimeType, DurationType]]
+  gspOptions: Option[GSPOptions[TimeType, DurationType]],
+  minSupportCount: Long
 )(implicit timeOrdering: Ordering[TimeType]) {
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
 
-  private[gsp] val searchableSequences: RDD[(SequenceId, SearchableSequenceType)] = {
+  private[gsp] val searchableSequences: RDD[SearchableSequenceType] = {
     implicit val localOrdering: Ordering[TimeType] = timeOrdering
     sequences.groupByKey()
       .mapValues { sequence =>
         PatternMatcher.buildSearchableSequence(sequence)(localOrdering)
       }
+      .map(_._2)
       .persist(StorageLevel.MEMORY_AND_DISK)
+  }
+
+  def filter(in: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
+    val timeOrderingLocal = timeOrdering
+    val minSupportCountLocal = minSupportCount
+    val gspOptionsLocal = gspOptions
+
+    in cartesian searchableSequences filter { case (pattern, serchableSequence) =>
+      PatternMatcher.matches(pattern, serchableSequence, gspOptionsLocal)(timeOrderingLocal)
+    } map { case (pattern, _) =>
+      (pattern, 1L)
+    } reduceByKey {
+      _ + _
+    } filter { case (_, support) =>
+      support >= minSupportCountLocal
+    } map {
+      _._1
+    }
   }
 }
 
@@ -151,21 +170,17 @@ private[gsp] object PatternMatcher {
       if (rest.elements.isEmpty) PatternExtendSuccess
       else {
         val element = rest.elements.head
-        println(s"searching for $element from $minTime")
         elementFinder.find(minTime, element) match {
           case Some((startTime, endTime)) if timeOrdering.gt(startTime, maxTime) =>
-            println(s"found - backtrace from $endTime with minTime = ${applyMaxGapBack(startTime)}")
             PatternExtendBacktrace(MinTime(applyMaxGapBack(startTime), inclusive = true))
 
           case Some((_, endTime)) =>
-            println(s"found - extending; newFrom = ${applyMinGap(endTime)}; endTime = $endTime")
             extend(applyMinGap(endTime), applyMaxGap(endTime), Pattern(rest.elements.tail)) match {
               case PatternExtendBacktrace(newMinTime) => extend(newMinTime, maxTime, rest)
               case x                                  => x
             }
 
           case None =>
-            println("not found")
             PatternExtendFailure
         }
       }
