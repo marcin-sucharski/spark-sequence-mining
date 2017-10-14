@@ -16,7 +16,7 @@ lazy val dataGenerator = (project in file("data-generator"))
 lazy val sparkImpl = (project in file("spark-impl"))
   .settings(commonSettings ++ Seq(
     libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-core" % "2.1.1",
+      "org.apache.spark" %% "spark-core" % "2.2.0",
 
       "org.scalatest" %% "scalatest" % "3.0.1" % Test,
       "org.scalamock" %% "scalamock-scalatest-support" % "3.6.0" % Test
