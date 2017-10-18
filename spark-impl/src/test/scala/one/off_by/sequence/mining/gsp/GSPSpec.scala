@@ -10,6 +10,29 @@ class GSPSpec extends WordSpec
 
   "GSP" should {
     "have execute method" which {
+      val inputData = List[Transaction[String, Int, String]](
+        Transaction("C1", 1, Set("Ringworld")),
+        Transaction("C1", 2, Set("Foundation")),
+        Transaction("C1", 15, Set("Ringworld Engineers", "Second Foundation")),
+        Transaction("C2", 1, Set("Foundation", "Ringworld")),
+        Transaction("C2", 20, Set("Foundation and Empire")),
+        Transaction("C2", 50, Set("Ringworld Engineers"))
+      )
+
+      "works with example data" in {
+        val gsp = new GSP[String, Int, Int, String](sc)
+        val input = sc.parallelize(inputData)
+
+        val result = gsp.execute(input, 1.0).collect()
+
+        result.map(_._1) should contain theSameElementsAs List(
+          Pattern(Vector(Element("Ringworld"))),
+          Pattern(Vector(Element("Foundation"))),
+          Pattern(Vector(Element("Ringworld Engineers"))),
+          Pattern(Vector(Element("Ringworld"), Element("Ringworld Engineers"))),
+          Pattern(Vector(Element("Foundation"), Element("Ringworld Engineers")))
+        )
+      }
     }
 
     "have prepareInitialPatterns method" which {
@@ -70,10 +93,6 @@ class GSPSpec extends WordSpec
         )
       }
     }
-
-    "have generateJoinCandidates method" which {
-
-    }
   }
 
   private type ItemType = Int
@@ -81,6 +100,7 @@ class GSPSpec extends WordSpec
   private type TimeType = Int
   private type SequenceId = Int
 
+  @specialized
   private def withGSP[T](f: GSP[ItemType, DurationType, TimeType, SequenceId] => T): T = {
     f(new GSP[ItemType, DurationType, TimeType, SequenceId](sc))
   }

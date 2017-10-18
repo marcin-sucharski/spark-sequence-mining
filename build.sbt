@@ -18,6 +18,9 @@ lazy val sparkImpl = (project in file("spark-impl"))
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-core" % "2.2.0",
 
+      "ch.qos.logback" % "logback-classic" % "1.2.3",
+      "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
+
       "org.scalatest" %% "scalatest" % "3.0.1" % Test,
       "org.scalamock" %% "scalamock-scalatest-support" % "3.6.0" % Test
     ),

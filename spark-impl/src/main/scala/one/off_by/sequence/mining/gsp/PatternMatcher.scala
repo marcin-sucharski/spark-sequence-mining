@@ -19,6 +19,7 @@ private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: 
 )(implicit timeOrdering: Ordering[TimeType]) {
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
+  type SupportCount = Long
 
   private[gsp] val searchableSequences: RDD[SearchableSequenceType] = {
     implicit val localOrdering: Ordering[TimeType] = timeOrdering
@@ -30,7 +31,7 @@ private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: 
       .persist(StorageLevel.MEMORY_AND_DISK)
   }
 
-  def filter(in: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
+  def filter(in: RDD[Pattern[ItemType]]): RDD[(Pattern[ItemType], SupportCount)] = {
     val timeOrderingLocal = timeOrdering
     val minSupportCountLocal = minSupportCount
     val gspOptionsLocal = gspOptions
@@ -43,8 +44,6 @@ private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: 
       _ + _
     } filter { case (_, support) =>
       support >= minSupportCountLocal
-    } map {
-      _._1
     }
   }
 }

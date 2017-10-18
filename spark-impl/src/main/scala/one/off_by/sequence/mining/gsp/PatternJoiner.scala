@@ -37,12 +37,25 @@ private[gsp] class PatternJoiner[ItemType](
       }
       .map(p => (p.pattern.hash, p))
 
-    (prefixes join suffixes filter { case (_, (prefix, suffix)) =>
-      prefix.pattern.pattern == suffix.pattern.pattern
-    }).collect().foreach(x => println(x))
-
     prefixes join suffixes filter { case (_, (prefix, suffix)) =>
       prefix.pattern.pattern == suffix.pattern.pattern
+    } filter { case (_, (prefix, suffix)) =>
+      val common = prefix.pattern.pattern.elements
+      (prefix.joinItem, suffix.joinItem) match {
+        case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
+          prefixItem != suffixItem || common.length > 1
+
+        case (JoinItemExistingElement(suffixItem), JoinItemNewElement(_)) =>
+          !common.lastOption.exists(_.items contains suffixItem)
+
+        case (JoinItemNewElement(_), JoinItemExistingElement(prefixItem)) =>
+          !common.headOption.exists(_.items contains prefixItem)
+
+        case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
+          common.headOption.exists(!_.items.contains(prefixItem)) &&
+            common.lastOption.exists(!_.items.contains(suffixItem)) &&
+            (common.length > 1 || prefixItem != suffixItem)
+      }
     } map { case (_, (prefix, suffix)) =>
       val common = prefix.pattern.pattern.elements
       val lastIndex = common.size - 1
@@ -57,7 +70,8 @@ private[gsp] class PatternJoiner[ItemType](
           common.updated(0, common(0) + prefixItem) :+ Element(suffixItem)
 
         case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
-          common.updated(0, common(0) + prefixItem).updated(lastIndex, common(lastIndex) + suffixItem)
+          val withPrefix = common.updated(0, common(0) + prefixItem)
+          withPrefix.updated(lastIndex, withPrefix(lastIndex) + suffixItem)
       }
       Pattern(elements)
     } distinct()
@@ -71,6 +85,7 @@ private[gsp] class PatternJoiner[ItemType](
 
     val localHasher = hasher
 
+    source.cache()
     val sourceWithHash = source map { pattern =>
       implicit val hasher: PatternHasher[ItemType] = localHasher.value
       val result = pattern.hash
@@ -101,7 +116,7 @@ private[gsp] class PatternJoiner[ItemType](
         else 0
       }).sum
       count == expectedCount
-    } map(_._1)
+    } map(_._1) union matches.filter(p => p.elements.size == 2 && p.elements.forall(_.items.size == 1))
   }
 }
 

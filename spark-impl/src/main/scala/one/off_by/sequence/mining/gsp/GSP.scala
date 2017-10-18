@@ -1,8 +1,11 @@
 package one.off_by.sequence.mining.gsp
 
+import com.typesafe.scalalogging.StrictLogging
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
+import scala.language.postfixOps
 import scala.reflect.ClassTag
 
 @specialized
@@ -22,10 +25,11 @@ case class GSPTypeSupport[TimeType, DurationType](
 
 @specialized
 class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
-  sc: SparkContext
+  sc: SparkContext,
+  patternHasher: PatternHasher[ItemType] = new DefaultPatternHasher[ItemType]()
 )(
   implicit timeOrdering: Ordering[TimeType]
-) {
+) extends StrictLogging {
 
   import Domain.{Percent, Support, SupportCount}
 
@@ -36,23 +40,46 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   private[gsp] val partitioner: Partitioner =
     new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2) * 4)
 
+  private val broadcastHasher = sc.broadcast(patternHasher)
+  private val patternJoiner = new PatternJoiner[ItemType](broadcastHasher, partitioner)
+
   def execute(
     transactions: RDD[TransactionType],
     minSupport: Percent,
+    minItemsInPattern: Long = 1L,
     maybeTaxonomies: Option[RDD[TaxonomyType]] = None,
     maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None
   ): RDD[(Pattern[ItemType], Support)] = {
+    def maybeFilterOut(itemsCount: Long, result: RDD[(Pattern[ItemType], SupportCount)]) =
+      if (itemsCount >= minItemsInPattern) result
+      else sc.parallelize(List.empty[(Pattern[ItemType], SupportCount)])
+
     val sequences: RDD[(SequenceId, TransactionType)] = transactions
       .map(t => (t.sequenceId, t))
       .partitionBy(partitioner)
       .cache()
-    val sequenceCount = sequences.keys.count()
-    val minSupportCount = (sequenceCount * (minSupport * 0.01)).toLong
 
-    val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
+    val sequenceCount = sequences.keys.distinct.count()
+    val minSupportCount = (sequenceCount * minSupport).toLong
+    logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount")
 
-    ???
+    val patternMatcher = new PatternMatcher(partitioner, sequences, maybeOptions, minSupportCount)
+
+    val initialPatterns = prepareInitialPatterns(sequences, minSupportCount).cache()
+    Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
+      val newLength = prevLength + 1
+      logger.info(s"Merging patterns of size $prevLength into $newLength")
+      val candidates = patternJoiner.generateCandidates(prev.map(_._1))
+      val phaseResult = patternMatcher.filter(candidates).cache()
+      State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
+    } takeWhile (!_.lastPattern.isEmpty()) map (_.result.mapValues(_.toDouble / sequenceCount.toDouble)) last
   }
+
+  private case class State(
+    result: RDD[(Pattern[ItemType], SupportCount)],
+    lastPattern: RDD[(Pattern[ItemType], SupportCount)],
+    itemsCount: Long
+  )
 
   private[gsp] def prepareInitialPatterns(
     sequences: RDD[(SequenceId, TransactionType)],
@@ -67,10 +94,6 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
       .reduceByKey(_ + _)
       .filter(_._2 >= minSupportCount)
   }
-
-  private[gsp] def generateJoinCandidates(in: RDD[Pattern[ItemType]]): GSP.JoinCandidatesResult[ItemType] =
-    ???
-
 
   private[gsp] def prepareTaxonomies(
     taxonomies: RDD[TaxonomyType]

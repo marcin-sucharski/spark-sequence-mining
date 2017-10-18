@@ -82,7 +82,7 @@ class PatternMatcherSpec extends FreeSpec
         val patternMatcher = new PatternMatcher[Int, Int, Int, Int](
           partitioner,sc.parallelize(sequences), None, minSupport)
 
-        patternMatcher.filter(sc.parallelize(input)).collect() should contain theSameElementsAs output
+        patternMatcher.filter(sc.parallelize(input)).collect().map(_._1) should contain theSameElementsAs output
       }
     }
   }

@@ -26,6 +26,24 @@ class PatternJoinerSpec extends WordSpec
       Pattern(Vector(Element(1, 2), Element(3, 4)))
     )
 
+    val sourceSingleItemPatterns = List(
+      Pattern(Vector(Element(1))),
+      Pattern(Vector(Element(2))),
+      Pattern(Vector(Element(3)))
+    )
+    val afterJoinSingleItemPatterns = List(
+      Pattern(Vector(Element(1), Element(2))),
+      Pattern(Vector(Element(1), Element(3))),
+      Pattern(Vector(Element(2), Element(3))),
+      Pattern(Vector(Element(2), Element(1))),
+      Pattern(Vector(Element(3), Element(1))),
+      Pattern(Vector(Element(3), Element(2))),
+      Pattern(Vector(Element(1, 2))),
+      Pattern(Vector(Element(2, 3))),
+      Pattern(Vector(Element(1, 3)))
+    )
+    val afterPruneSingleItemPatterns = afterJoinSingleItemPatterns
+
     "provide `generateCandidates` method" which {
       "generates correct candidates set with join and prune" in withPatternJoiner[Int] { joiner =>
         val source = sc.parallelize(sourcePatterns)
@@ -44,6 +62,14 @@ class PatternJoinerSpec extends WordSpec
 
         result should contain theSameElementsAs afterJoinPatterns
       }
+
+      "correctly works for single-item patterns:" in withPatternJoiner[Int] { joiner =>
+        val source = sc.parallelize(sourceSingleItemPatterns)
+
+        val result = joiner.joinPatterns(source).collect()
+
+        result should contain theSameElementsAs afterJoinSingleItemPatterns
+      }
     }
 
     "have internal `pruneMatches` method" which {
@@ -55,11 +81,21 @@ class PatternJoinerSpec extends WordSpec
 
         result should contain theSameElementsAs afterPruningPatterns
       }
+
+      "works correctly with matches generated from single-item patterns" in withPatternJoiner[Int] { joiner =>
+        val source = sc.parallelize(sourceSingleItemPatterns)
+        val afterJoin = sc.parallelize(afterJoinSingleItemPatterns)
+
+        val result = joiner.pruneMatches(afterJoin, source).collect()
+
+        result should contain theSameElementsAs afterPruneSingleItemPatterns
+      }
     }
   }
 
   private val partitioner: Partitioner = new HashPartitioner(4)
 
+  @specialized
   private def withPatternJoiner[ItemType](f: PatternJoiner[ItemType] => Unit): Unit = {
     val hasher = sc.broadcast[PatternHasher[ItemType]](new DefaultPatternHasher[ItemType]())
     f(new PatternJoiner[ItemType](hasher, partitioner))
