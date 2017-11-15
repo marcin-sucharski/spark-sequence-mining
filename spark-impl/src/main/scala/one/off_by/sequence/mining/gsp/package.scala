@@ -3,7 +3,6 @@ package one.off_by.sequence.mining
 package object gsp {
   object Helper {
 
-    @specialized
     implicit class TimeSupport[TimeType, DurationType](time: TimeType)(
       implicit typeSupport: GSPTypeSupport[TimeType, DurationType]) {
 

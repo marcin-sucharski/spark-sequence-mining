@@ -4,7 +4,7 @@ import org.apache.spark.Partitioner
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 
-@specialized
+//TODO: check without PatternHasher
 private[gsp] class PatternJoiner[ItemType](
   hasher: Broadcast[PatternHasher[ItemType]],
   partitioner: Partitioner
@@ -127,7 +127,6 @@ private[gsp] object PatternJoiner {
   /**
     * Describes missing item from pattern in prefix/suffix.
     */
-  @specialized
   sealed trait JoinItem[ItemType] {
     def item: ItemType
   }
@@ -135,35 +134,29 @@ private[gsp] object PatternJoiner {
   /**
     * Item missing from pattern in prefix/suffix creates new element.
     */
-  @specialized
   case class JoinItemNewElement[ItemType](override val item: ItemType) extends JoinItem[ItemType]
 
   /**
     * Item missing from pattern in prefix/suffix is member of existing element.
     */
-  @specialized
   case class JoinItemExistingElement[ItemType](override val item: ItemType) extends JoinItem[ItemType]
 
-  @specialized
   sealed trait PrefixSuffixResult[ItemType] {
     def pattern: PatternWithHash[ItemType]
 
     def joinItem: JoinItem[ItemType]
   }
 
-  @specialized
   case class PrefixResult[ItemType](
     pattern: PatternWithHash[ItemType],
     joinItem: JoinItem[ItemType]
   ) extends PrefixSuffixResult[ItemType]
 
-  @specialized
   case class SuffixResult[ItemType](
     pattern: PatternWithHash[ItemType],
     joinItem: JoinItem[ItemType]
   ) extends PrefixSuffixResult[ItemType]
 
-  @specialized
   implicit class PatternWithHashSupport[ItemType](
     pattern: Pattern[ItemType]
   )(implicit hasher: PatternHasher[ItemType]) {
@@ -176,7 +169,6 @@ private[gsp] object PatternJoiner {
       impl(pattern.elements.head, pattern.elements.tail, _ prepend _, SuffixResult(_, _))
 
     @inline
-    @specialized
     private def impl[ResultType <: PrefixSuffixResult[ItemType]](
       targetElement: Element[ItemType],
       withoutTarget: Vector[Element[ItemType]],
@@ -206,7 +198,6 @@ private[gsp] object PatternJoiner {
     }
   }
 
-  @specialized
   private[gsp] def allSubsetsWithoutSingleItem[T](set: Set[T]): Seq[(T, Element[T])] =
     set.toSeq.map(item => (item, Element(set - item)))
 }

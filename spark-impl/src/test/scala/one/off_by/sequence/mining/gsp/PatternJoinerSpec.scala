@@ -95,7 +95,6 @@ class PatternJoinerSpec extends WordSpec
 
   private val partitioner: Partitioner = new HashPartitioner(4)
 
-  @specialized
   private def withPatternJoiner[ItemType](f: PatternJoiner[ItemType] => Unit): Unit = {
     val hasher = sc.broadcast[PatternHasher[ItemType]](new DefaultPatternHasher[ItemType]())
     f(new PatternJoiner[ItemType](hasher, partitioner))

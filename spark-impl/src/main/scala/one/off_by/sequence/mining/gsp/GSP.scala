@@ -1,14 +1,18 @@
 package one.off_by.sequence.mining.gsp
 
-import com.typesafe.scalalogging.StrictLogging
-import org.apache.spark.broadcast.Broadcast
+import grizzled.slf4j.Logging
+import one.off_by.sequence.mining.gsp.Domain.Support
+import one.off_by.sequence.mining.gsp.PatternHasher.PatternWithHash
+import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItemExistingElement, JoinItemNewElement, PrefixResult, SuffixResult}
+import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
+import org.apache.spark.api.java.StorageLevels
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
 import scala.language.postfixOps
 import scala.reflect.ClassTag
+import scala.util.control.NonFatal
 
-@specialized
 case class GSPOptions[TimeType, DurationType](
   typeSupport: GSPTypeSupport[TimeType, DurationType],
   windowSize: Option[DurationType] = None,
@@ -16,27 +20,24 @@ case class GSPOptions[TimeType, DurationType](
   maxGap: Option[DurationType] = None
 )
 
-@specialized
 case class GSPTypeSupport[TimeType, DurationType](
   timeDistance: (TimeType, TimeType) => DurationType,
   timeSubtract: (TimeType, DurationType) => TimeType,
   timeAdd: (TimeType, DurationType) => TimeType
 )(implicit val durationOrdering: Ordering[DurationType])
 
-@specialized
 class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   sc: SparkContext,
   patternHasher: PatternHasher[ItemType] = new DefaultPatternHasher[ItemType]()
 )(
   implicit timeOrdering: Ordering[TimeType]
-) extends StrictLogging {
+) extends Logging {
 
   import Domain.{Percent, Support, SupportCount}
 
   type TaxonomyType = Taxonomy[ItemType]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
 
-  assert(sc.getConf.contains("spark.default.parallelism"))
   private[gsp] val partitioner: Partitioner =
     new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2) * 4)
 
@@ -61,18 +62,22 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 
     val sequenceCount = sequences.keys.distinct.count()
     val minSupportCount = (sequenceCount * minSupport).toLong
-    logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount")
+    logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount.")
 
     val patternMatcher = new PatternMatcher(partitioner, sequences, maybeOptions, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount).cache()
-    Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
+    logger.info(s"Got ${initialPatterns.count()} initial patterns.")
+    val result = Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
       val newLength = prevLength + 1
-      logger.info(s"Merging patterns of size $prevLength into $newLength")
+      logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))
-      val phaseResult = patternMatcher.filter(candidates).cache()
+      val phaseResult = patternMatcher.filter(candidates).persist(StorageLevels.MEMORY_AND_DISK)
+      logger.info(s"Got ${phaseResult.count()} patterns as result.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
-    } takeWhile (!_.lastPattern.isEmpty()) map (_.result.mapValues(_.toDouble / sequenceCount.toDouble)) last
+    } takeWhile (!_.lastPattern.isEmpty()) map (_.result.mapValues(_.toDouble / sequenceCount.toDouble)) lastOption
+
+    result.getOrElse(sc.parallelize(Nil))
   }
 
   private case class State(
@@ -133,21 +138,77 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 }
 
 object GSP {
-
-  import Domain._
-
-  private[gsp] case class JoinCandidatesResult[ItemType](
-    prefixHash: RDD[(Hash[ItemType], Pattern[Element[ItemType]])],
-    suffixHash: RDD[(Hash[ItemType], Pattern[Element[ItemType]])]
-  )
-
   def main(args: Array[String]): Unit = {
     val conf: SparkConf = new SparkConf()
       .setAppName("GSP")
-      .set("spark.driver.host", "localhost")
-      .setMaster("local[*]")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .registerKryoClasses(Array(
+        classOf[Transaction[Long, Long, Long]],
+        classOf[Taxonomy[Long]],
+        classOf[Element[Long]],
+        classOf[Pattern[Long]],
+        classOf[Hash[Long]],
+        classOf[PatternWithHash[Long]],
+        classOf[JoinItemNewElement[Long]],
+        classOf[JoinItemExistingElement[Long]],
+        classOf[PrefixResult[Long]],
+        classOf[SuffixResult[Long]],
+        classOf[SearchableSequence[Long, Long, Long]]
+      ))
     val sc: SparkContext = new SparkContext(conf)
+    sc.setLogLevel("WARN")
 
+    val inputFile = getArg(args)("in")
+    val outputFile = getArg(args)("out")
+    val minSupport = findArg(args)("min-support").map(_.toDouble).getOrElse(0.5)
+    val minItemsInPattern = findArg(args)("min-items-in-pattern").map(_.toLong).getOrElse(1L)
+    val windowSize = findArg(args)("window-size").map(_.toLong)
+    val minGap = findArg(args)("min-gap").map(_.toLong)
+    val maxGap = findArg(args)("max-gap").map(_.toLong)
 
+    val gsp = new GSP[Long, Long, Long, Long](sc)
+    val maybeOptions = Some(GSPOptions(longTypeSupport, windowSize, minGap, maxGap))
+      .filter(_ => windowSize.isDefined || minGap.isDefined || maxGap.isDefined)
+
+    val input = sc.textFile(inputFile, gsp.partitioner.numPartitions)
+      .filter(_.trim.nonEmpty)
+      .flatMap(parseLineIntoTransaction)
+
+    gsp.execute(input, minSupport, minItemsInPattern, None, maybeOptions)
+      .map(mapResultToString)
+      .saveAsTextFile(outputFile)
+
+    Console.println("Press any key to finish")
+    Console.in.readLine()
   }
+
+  def parseLineIntoTransaction(line: String): Seq[Transaction[Long, Long, Long]] =
+    (try line.split("-1").map(_.split(" ").map(_.trim).filter(_.nonEmpty).map(_.toLong).toList).toList catch {
+      case NonFatal(e) =>
+        sys.error(s"malformed line due to ${e.getLocalizedMessage}: $line")
+    }) match {
+      case (sequenceId :: Nil) :: itemsets =>
+        itemsets.filter(_.nonEmpty).zipWithIndex map { case (items, index) =>
+          Transaction[Long, Long, Long](sequenceId, index + 1, items.toSet)
+        }
+
+      case _ =>
+        sys.error(s"malformed line: $line")
+    }
+
+  def mapResultToString(result: (Pattern[Long], Support)): String =
+    s"${result._2 * 100.0} # ${result._1}"
+
+  val longTypeSupport: GSPTypeSupport[Long, Long] = GSPTypeSupport[Long, Long](
+    (a, b) => b - a,
+    (a, b) => a - b,
+    (a, b) => a + b)
+
+  private def findArg(args: Seq[String])(name: String): Option[String] = {
+    val fullName = s"--$name"
+    args.dropWhile(_ != fullName).drop(1).headOption
+  }
+
+  private def getArg(args: Seq[String])(name: String): String =
+    findArg(args)(name).getOrElse(sys.error(s"missing argument $name"))
 }

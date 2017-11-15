@@ -100,7 +100,6 @@ class GSPSpec extends WordSpec
   private type TimeType = Int
   private type SequenceId = Int
 
-  @specialized
   private def withGSP[T](f: GSP[ItemType, DurationType, TimeType, SequenceId] => T): T = {
     f(new GSP[ItemType, DurationType, TimeType, SequenceId](sc))
   }

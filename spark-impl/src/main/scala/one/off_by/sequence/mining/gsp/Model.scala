@@ -1,19 +1,18 @@
 package one.off_by.sequence.mining.gsp
 
-@specialized
 case class Transaction[ItemType, TimeType, SequenceId](
   sequenceId: SequenceId,
   time: TimeType,
   items: Set[ItemType]
-)
+) {
+  require(items.nonEmpty)
+}
 
-@specialized
 case class Taxonomy[ItemType](
   ancestor: ItemType,
   descendants: List[ItemType]
 )
 
-@specialized
 case class Element[ItemType](
   items: Set[ItemType]
 ) extends AnyVal {
@@ -28,11 +27,12 @@ object Element {
     Element(Set(items: _*))
 }
 
-@specialized
 case class Pattern[ItemType](
   elements: Vector[Element[ItemType]]
-) extends AnyVal {
+) {
   override def toString = elements.mkString("<", "", ">")
+
+  override lazy val hashCode: Int = elements.hashCode()
 }
 
 object Domain {

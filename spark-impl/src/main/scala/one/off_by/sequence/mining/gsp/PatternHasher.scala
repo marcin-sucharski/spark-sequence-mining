@@ -1,6 +1,5 @@
 package one.off_by.sequence.mining.gsp
 
-@specialized
 trait PatternHasher[ItemType] extends Serializable {
 
   /**
@@ -36,20 +35,17 @@ case class Hash[ItemType](
 
 object PatternHasher {
 
-  @specialized
   case class PatternWithHash[ItemType](
     pattern: Pattern[ItemType],
     hash: Hash[ItemType]
   )
 
-  @specialized
   implicit class HashSupport[ItemType](
     hash: Hash[ItemType]
   )(implicit hasher: PatternHasher[ItemType]) {
     def :##(element: Element[ItemType]): Hash[ItemType] = hasher.appendRight(hash, element)
   }
 
-  @specialized
   implicit class PatternSupport[ItemType](
     pattern: Pattern[ItemType]
   )(implicit hasher: PatternHasher[ItemType]) {
@@ -59,7 +55,6 @@ object PatternHasher {
       PatternWithHash(pattern, pattern.rawHash)
   }
 
-  @specialized
   implicit class PatternWithHashSupport[ItemType](
     pattern: PatternWithHash[ItemType]
   )(implicit hasher: PatternHasher[ItemType]) {
@@ -74,7 +69,6 @@ object PatternHasher {
   }
 }
 
-@specialized
 class DefaultPatternHasher[ItemType] extends PatternHasher[ItemType] {
   override def nil: Hash[ItemType] = Hash(0)
 
