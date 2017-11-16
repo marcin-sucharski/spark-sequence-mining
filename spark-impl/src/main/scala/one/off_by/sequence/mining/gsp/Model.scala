@@ -5,7 +5,7 @@ case class Transaction[ItemType, TimeType, SequenceId](
   time: TimeType,
   items: Set[ItemType]
 ) {
-  require(items.nonEmpty)
+  assume(items.nonEmpty)
 }
 
 case class Taxonomy[ItemType](

@@ -2,7 +2,6 @@ package one.off_by.sequence.mining.gsp
 
 import grizzled.slf4j.Logging
 import one.off_by.sequence.mining.gsp.Domain.Support
-import one.off_by.sequence.mining.gsp.PatternHasher.PatternWithHash
 import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItemExistingElement, JoinItemNewElement, PrefixResult, SuffixResult}
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.api.java.StorageLevels
@@ -27,10 +26,11 @@ case class GSPTypeSupport[TimeType, DurationType](
 )(implicit val durationOrdering: Ordering[DurationType])
 
 class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
-  sc: SparkContext,
-  patternHasher: PatternHasher[ItemType] = new DefaultPatternHasher[ItemType]()
+  sc: SparkContext
 )(
-  implicit timeOrdering: Ordering[TimeType]
+  implicit
+  timeOrdering: Ordering[TimeType],
+  itemOrdering: Ordering[ItemType]
 ) extends Logging {
 
   import Domain.{Percent, Support, SupportCount}
@@ -41,8 +41,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   private[gsp] val partitioner: Partitioner =
     new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2) * 4)
 
-  private val broadcastHasher = sc.broadcast(patternHasher)
-  private val patternJoiner = new PatternJoiner[ItemType](broadcastHasher, partitioner)
+  private val patternJoiner = new PatternJoiner[ItemType](partitioner)
 
   def execute(
     transactions: RDD[TransactionType],
@@ -66,13 +65,17 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 
     val patternMatcher = new PatternMatcher(partitioner, sequences, maybeOptions, minSupportCount)
 
-    val initialPatterns = prepareInitialPatterns(sequences, minSupportCount).cache()
+    val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
+      .repartition(partitioner.numPartitions)
+      .persist(StorageLevels.MEMORY_AND_DISK)
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
     val result = Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
       val newLength = prevLength + 1
       logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))
-      val phaseResult = patternMatcher.filter(candidates).persist(StorageLevels.MEMORY_AND_DISK)
+      val phaseResult = patternMatcher.filter(candidates)
+        .repartition(partitioner.numPartitions)
+        .persist(StorageLevels.MEMORY_AND_DISK)
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
     } takeWhile (!_.lastPattern.isEmpty()) map (_.result.mapValues(_.toDouble / sequenceCount.toDouble)) lastOption
@@ -90,7 +93,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     sequences: RDD[(SequenceId, TransactionType)],
     minSupportCount: Long
   ): RDD[(Pattern[ItemType], SupportCount)] = {
-    require(sequences.partitioner contains partitioner)
+    assume(sequences.partitioner contains partitioner)
     sequences
       .flatMapValues(_.items.map(Element(_)))
       .mapPartitions(_.toSet.toIterator, preservesPartitioning = true)
@@ -147,8 +150,6 @@ object GSP {
         classOf[Taxonomy[Long]],
         classOf[Element[Long]],
         classOf[Pattern[Long]],
-        classOf[Hash[Long]],
-        classOf[PatternWithHash[Long]],
         classOf[JoinItemNewElement[Long]],
         classOf[JoinItemExistingElement[Long]],
         classOf[PrefixResult[Long]],

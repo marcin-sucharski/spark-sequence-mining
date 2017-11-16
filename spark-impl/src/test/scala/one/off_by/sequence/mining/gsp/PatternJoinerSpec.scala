@@ -1,6 +1,6 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.testkit.{DefaultPatternHasherHelper, SparkTestBase}
+import one.off_by.testkit.SparkTestBase
 import org.apache.spark.{HashPartitioner, Partitioner}
 import org.scalatest.{Inspectors, Matchers, WordSpec}
 
@@ -16,21 +16,17 @@ class PatternJoinerSpec extends WordSpec
       Pattern(Vector(Element(1), Element(3, 4))),
       Pattern(Vector(Element(1, 3), Element(5))),
       Pattern(Vector(Element(2), Element(3, 4))),
-      Pattern(Vector(Element(2), Element(3), Element(5)))
-    )
+      Pattern(Vector(Element(2), Element(3), Element(5))))
     val afterJoinPatterns = List(
       Pattern(Vector(Element(1, 2), Element(3, 4))),
-      Pattern(Vector(Element(1, 2), Element(3), Element(5)))
-    )
+      Pattern(Vector(Element(1, 2), Element(3), Element(5))))
     val afterPruningPatterns = List(
-      Pattern(Vector(Element(1, 2), Element(3, 4)))
-    )
+      Pattern(Vector(Element(1, 2), Element(3, 4))))
 
     val sourceSingleItemPatterns = List(
       Pattern(Vector(Element(1))),
       Pattern(Vector(Element(2))),
-      Pattern(Vector(Element(3)))
-    )
+      Pattern(Vector(Element(3))))
     val afterJoinSingleItemPatterns = List(
       Pattern(Vector(Element(1), Element(2))),
       Pattern(Vector(Element(1), Element(3))),
@@ -40,8 +36,7 @@ class PatternJoinerSpec extends WordSpec
       Pattern(Vector(Element(3), Element(2))),
       Pattern(Vector(Element(1, 2))),
       Pattern(Vector(Element(2, 3))),
-      Pattern(Vector(Element(1, 3)))
-    )
+      Pattern(Vector(Element(1, 3))))
     val afterPruneSingleItemPatterns = afterJoinSingleItemPatterns
 
     "provide `generateCandidates` method" which {
@@ -95,19 +90,16 @@ class PatternJoinerSpec extends WordSpec
 
   private val partitioner: Partitioner = new HashPartitioner(4)
 
-  private def withPatternJoiner[ItemType](f: PatternJoiner[ItemType] => Unit): Unit = {
-    val hasher = sc.broadcast[PatternHasher[ItemType]](new DefaultPatternHasher[ItemType]())
-    f(new PatternJoiner[ItemType](hasher, partitioner))
+  private def withPatternJoiner[ItemType: Ordering](f: PatternJoiner[ItemType] => Unit): Unit = {
+    f(new PatternJoiner[ItemType](partitioner))
   }
 }
 
-class PatternWithHashSupportSpec extends WordSpec
-  with Matchers
-  with DefaultPatternHasherHelper {
+class PatternSupportSpec extends WordSpec
+  with Matchers {
 
-  "PatternWithHashSupport" should {
+  "PatternSupport" should {
     import PatternJoiner._
-    import PatternHasher.PatternSupport
 
     val singleItemPattern: Pattern[Int] = Pattern(Vector(Element(1)))
     val singleElementMultipleItemsPattern: Pattern[Int] = Pattern(Vector(Element(1, 2)))
@@ -115,126 +107,102 @@ class PatternWithHashSupportSpec extends WordSpec
     val multipleItemElementsPattern: Pattern[Int] = Pattern(Vector(Element(1, 2, 3), Element(4, 5, 6)))
 
     "provide `prefixes` method" which {
-      "returns correct result for single-item patterns" in withHasher[Int] { implicit hasher =>
+      "returns correct result for single-item patterns" in {
         val prefixes = singleItemPattern.prefixes
 
         prefixes should contain theSameElementsAs List(
           PrefixResult(
-            Pattern(Vector[Element[Int]]()).hash,
-            JoinItemNewElement(1)
-          ),
+            Pattern(Vector[Element[Int]]()),
+            JoinItemNewElement(1)),
           PrefixResult(
-            Pattern(Vector(Element[Int]())).hash,
-            JoinItemExistingElement(1)
-          )
-        )
+            Pattern(Vector(Element[Int]())),
+            JoinItemExistingElement(1)))
       }
 
-      "returns correct result for single-element multiple-item patterns" in withHasher[Int] { implicit hasher =>
+      "returns correct result for single-element multiple-item patterns" in {
         val prefixes = singleElementMultipleItemsPattern.prefixes
 
         prefixes should contain theSameElementsAs List(
           PrefixResult(
-            Pattern(Vector(Element(1))).hash,
-            JoinItemExistingElement(2)
-          ),
+            Pattern(Vector(Element(1))),
+            JoinItemExistingElement(2)),
           PrefixResult(
-            Pattern(Vector(Element(2))).hash,
-            JoinItemExistingElement(1)
-          )
-        )
+            Pattern(Vector(Element(2))),
+            JoinItemExistingElement(1)))
       }
 
-      "returns correct result for longer patterns" in withHasher[Int] { implicit hasher =>
+      "returns correct result for longer patterns" in {
         val prefixes = doubleElementsPattern.prefixes
 
         prefixes should contain theSameElementsAs List(
           PrefixResult(
-            Pattern(Vector(Element(1))).hash,
-            JoinItemNewElement(2)
-          )
-        )
+            Pattern(Vector(Element(1))),
+            JoinItemNewElement(2)))
       }
 
-      "returns correct result with multiple-items elements" in withHasher[Int] { implicit hasher =>
+      "returns correct result with multiple-items elements" in {
         val prefixes = multipleItemElementsPattern.prefixes
 
         prefixes should contain theSameElementsAs List(
           PrefixResult(
-            Pattern(Vector(Element(1, 2, 3), Element(4, 5))).hash,
-            JoinItemExistingElement(6)
-          ),
+            Pattern(Vector(Element(1, 2, 3), Element(4, 5))),
+            JoinItemExistingElement(6)),
           PrefixResult(
-            Pattern(Vector(Element(1, 2, 3), Element(4, 6))).hash,
-            JoinItemExistingElement(5)
-          ),
+            Pattern(Vector(Element(1, 2, 3), Element(4, 6))),
+            JoinItemExistingElement(5)),
           PrefixResult(
-            Pattern(Vector(Element(1, 2, 3), Element(5, 6))).hash,
-            JoinItemExistingElement(4)
-          )
-        )
+            Pattern(Vector(Element(1, 2, 3), Element(5, 6))),
+            JoinItemExistingElement(4)))
       }
     }
 
     "provide `suffixes` method" which {
-      "returns correct result for single-item patterns" in withHasher[Int] { implicit hasher =>
+      "returns correct result for single-item patterns" in {
         val suffixes = singleItemPattern.suffixes
 
         suffixes should contain theSameElementsAs List(
           SuffixResult(
-            Pattern(Vector[Element[Int]]()).hash,
-            JoinItemNewElement(1)
-          ),
+            Pattern(Vector[Element[Int]]()),
+            JoinItemNewElement(1)),
           SuffixResult(
-            Pattern(Vector(Element[Int]())).hash,
-            JoinItemExistingElement(1)
-          )
-        )
+            Pattern(Vector(Element[Int]())),
+            JoinItemExistingElement(1)))
       }
 
-      "returns correct result for single-element multiple-item patterns" in withHasher[Int] { implicit hasher =>
+      "returns correct result for single-element multiple-item patterns" in {
         val suffixes = singleElementMultipleItemsPattern.suffixes
 
         suffixes should contain theSameElementsAs List(
           SuffixResult(
-            Pattern(Vector(Element(1))).hash,
-            JoinItemExistingElement(2)
-          ),
+            Pattern(Vector(Element(1))),
+            JoinItemExistingElement(2)),
           SuffixResult(
-            Pattern(Vector(Element(2))).hash,
-            JoinItemExistingElement(1)
-          )
-        )
+            Pattern(Vector(Element(2))),
+            JoinItemExistingElement(1)))
       }
 
-      "returns correct result for longer patterns" in withHasher[Int] { implicit hasher =>
+      "returns correct result for longer patterns" in {
         val suffixes = doubleElementsPattern.suffixes
 
         suffixes should contain theSameElementsAs List(
           SuffixResult(
-            Pattern(Vector(Element(2))).hash,
-            JoinItemNewElement(1)
-          )
-        )
+            Pattern(Vector(Element(2))),
+            JoinItemNewElement(1)))
       }
 
-      "returns correct result with multiple-items elements" in withHasher[Int] { implicit hasher =>
+      "returns correct result with multiple-items elements" in {
         val suffixes = multipleItemElementsPattern.suffixes
 
         suffixes should contain theSameElementsAs List(
           SuffixResult(
-            Pattern(Vector(Element(1, 2), Element(4, 5, 6))).hash,
-            JoinItemExistingElement(3)
-          ),
+            Pattern(Vector(Element(1, 2), Element(4, 5, 6))),
+            JoinItemExistingElement(3)),
           SuffixResult(
-            Pattern(Vector(Element(1, 3), Element(4, 5, 6))).hash,
-            JoinItemExistingElement(2)
-          ),
+            Pattern(Vector(Element(1, 3), Element(4, 5, 6))),
+            JoinItemExistingElement(2)),
           SuffixResult(
-            Pattern(Vector(Element(2, 3), Element(4, 5, 6))).hash,
-            JoinItemExistingElement(1)
-          )
-        )
+            Pattern(Vector(Element(2, 3), Element(4, 5, 6))),
+            JoinItemExistingElement(1)))
       }
     }
   }

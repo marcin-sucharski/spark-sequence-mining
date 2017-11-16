@@ -62,8 +62,8 @@ private[gsp] object PatternMatcher {
     id: SequenceId,
     items: Map[ItemType, OrderedItemOccurrenceList[TimeType]]
   ) {
-    require(items.forall(_._2.nonEmpty))
-    require(items.nonEmpty)
+    assume(items.forall(_._2.nonEmpty))
+    assume(items.nonEmpty)
 
     def findFirstOccurrence(item: ItemType): Option[TimeType] =
       items.get(item).flatMap(_.headOption)
@@ -115,8 +115,8 @@ private[gsp] object PatternMatcher {
   def buildSearchableSequence[ItemType, TimeType, SequenceId](
     sequence: Iterable[Transaction[ItemType, TimeType, SequenceId]]
   )(implicit timeOrdering: Ordering[TimeType]): SearchableSequence[ItemType, TimeType, SequenceId] = {
-    require(sequence.nonEmpty)
-    require(sequence.forall(_.items.nonEmpty))
+    assume(sequence.nonEmpty)
+    assume(sequence.forall(_.items.nonEmpty))
 
     val groupedNotSorted = (HashMap[ItemType, Vector[TimeType]]() /: sequence) { case (hashMap, transaction) =>
       (hashMap /: transaction.items) { case (hashMapLocal, item) =>
@@ -142,8 +142,8 @@ private[gsp] object PatternMatcher {
     seq: SearchableSequence[ItemType, TimeType, SequenceId],
     gspOptions: Option[GSPOptions[TimeType, DurationType]]
   )(implicit timeOrdering: Ordering[TimeType]): Boolean = {
-    require(seq.items.forall(_._2.nonEmpty))
-    require(seq.items.nonEmpty)
+    assume(seq.items.forall(_._2.nonEmpty))
+    assume(seq.items.nonEmpty)
 
     trait PatternExtendResult
     case object PatternExtendSuccess extends PatternExtendResult
