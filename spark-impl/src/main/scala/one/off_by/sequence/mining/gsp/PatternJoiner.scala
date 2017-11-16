@@ -17,26 +17,25 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
   }
 
   private[gsp] def joinPatterns(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
-    val ordering = implicitly[Ordering[ItemType]]
+    val isFirst = patterns.take(1).head.elements.map(_.items.size).sum == 1
 
     val prefixes = patterns
       .flatMap(_.prefixes)
       .map(p => (p.pattern, p))
-      .partitionBy(partitioner)
 
     val suffixes = patterns
       .flatMap(_.suffixes)
       .map(p => (p.pattern, p))
 
-    val initialData = prefixes join suffixes filter { case (_, (prefix, suffix)) =>
+    val initialData = joinSuffixesAndPrefixes(prefixes, suffixes, isFirst) filter { case (prefix, suffix) =>
       val common = prefix.pattern.elements
       val itemsCount = common.map(_.items.size).sum
       (prefix.joinItem, suffix.joinItem) match {
         case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
-          prefixItem != suffixItem || common.length > 1
+          true
 
         case (JoinItemExistingElement(suffixItem), JoinItemNewElement(_)) =>
-          !common.lastOption.exists(_.items contains suffixItem) && itemsCount > 1
+          !common.lastOption.exists(_.items contains suffixItem)
 
         case (JoinItemNewElement(_), JoinItemExistingElement(prefixItem)) =>
           !common.headOption.exists(_.items contains prefixItem)
@@ -46,25 +45,9 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
             common.lastOption.exists(!_.items.contains(suffixItem)) &&
             (common.length > 1 || prefixItem != suffixItem)
       }
-    } map (_._2)
-    initialData.cache()
+    }
 
-    val candidateBuilders = (initialData filter { case (prefix, suffix) =>
-      (prefix.joinItem, suffix.joinItem) match {
-        case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) => suffixItem == prefixItem
-        case _                                                                          => false
-      }
-    } distinct()) union (initialData filter { case (prefix, suffix) =>
-      (prefix.joinItem, suffix.joinItem) match {
-        case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
-          prefix.pattern.elements.length > 1 || ordering.lt(suffixItem, prefixItem)
-
-        case _ =>
-          true
-      }
-    })
-
-    val result = candidateBuilders map { case (prefix, suffix) =>
+    val result = initialData map { case (prefix, suffix) =>
       val common = prefix.pattern.elements
       val lastIndex = common.size - 1
       val elements = (prefix.joinItem, suffix.joinItem) match {
@@ -84,10 +67,54 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
       Pattern(elements)
     }
 
-    val isFirst = patterns.take(1).head.elements.map(_.items.size).sum == 1
-
     if (isFirst) result
     else result.distinct()
+  }
+
+  private def joinSuffixesAndPrefixes(
+    prefixes: RDD[(Pattern[ItemType], PatternJoiner.PrefixResult[ItemType])],
+    suffixes: RDD[(Pattern[ItemType], PatternJoiner.SuffixResult[ItemType])],
+    isFirst: Boolean
+  ): RDD[(PatternJoiner.PrefixResult[ItemType], PatternJoiner.SuffixResult[ItemType])] = {
+    if (isFirst) {
+      val ordering = implicitly[Ordering[ItemType]]
+
+      val rawPrefixes = prefixes.map(_._2)
+      val rawSuffixes = suffixes.map(_._2)
+
+      val newItemPrefixes = rawPrefixes.filter(_.pattern.elements.isEmpty)
+      val newItemSuffixes = rawSuffixes.filter(_.pattern.elements.isEmpty)
+
+      val joinItemPrefixes = rawPrefixes.filter(_.pattern.elements.nonEmpty)
+      val joinItemSuffixes = rawSuffixes.filter(_.pattern.elements.nonEmpty)
+
+      def processDifferent(
+        initialPrefixes: RDD[PatternJoiner.PrefixResult[ItemType]],
+        initialSuffixes: RDD[PatternJoiner.SuffixResult[ItemType]]
+      ): RDD[(PatternJoiner.PrefixResult[ItemType], PatternJoiner.SuffixResult[ItemType])] =
+        initialPrefixes.cartesian(initialSuffixes) filter { case (prefix, suffix) =>
+          (prefix.joinItem, suffix.joinItem) match {
+            case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
+              !ordering.eq(suffixItem, prefixItem)
+
+            case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
+              ordering.lt(suffixItem, prefixItem)
+          }
+        }
+
+      def processEqual(
+        initialPrefixes: RDD[PatternJoiner.PrefixResult[ItemType]],
+        initialSuffixes: RDD[PatternJoiner.SuffixResult[ItemType]]
+      ): RDD[(PatternJoiner.PrefixResult[ItemType], PatternJoiner.SuffixResult[ItemType])] =
+        initialPrefixes.cartesian(initialSuffixes) filter { case (prefix, suffix) =>
+          ordering.eq(prefix.joinItem.item, suffix.joinItem.item)
+        }
+
+      processDifferent(newItemPrefixes, newItemSuffixes)
+        .union(processEqual(newItemPrefixes, newItemSuffixes))
+        .union(processDifferent(joinItemPrefixes, joinItemSuffixes))
+        .union(processEqual(joinItemPrefixes, joinItemSuffixes))
+    } else prefixes.partitionBy(partitioner) join suffixes map (_._2)
   }
 
   private[gsp] def pruneMatches(

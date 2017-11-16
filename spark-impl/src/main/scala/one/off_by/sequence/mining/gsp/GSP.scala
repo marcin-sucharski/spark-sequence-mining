@@ -66,7 +66,6 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val patternMatcher = new PatternMatcher(partitioner, sequences, maybeOptions, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
-      .repartition(partitioner.numPartitions)
       .persist(StorageLevels.MEMORY_AND_DISK)
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
     val result = Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
@@ -74,7 +73,6 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
       logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))
       val phaseResult = patternMatcher.filter(candidates)
-        .repartition(partitioner.numPartitions)
         .persist(StorageLevels.MEMORY_AND_DISK)
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)

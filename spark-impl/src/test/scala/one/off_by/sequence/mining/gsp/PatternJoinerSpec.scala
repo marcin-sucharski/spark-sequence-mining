@@ -28,12 +28,15 @@ class PatternJoinerSpec extends WordSpec
       Pattern(Vector(Element(2))),
       Pattern(Vector(Element(3))))
     val afterJoinSingleItemPatterns = List(
+      Pattern(Vector(Element(1), Element(1))),
       Pattern(Vector(Element(1), Element(2))),
       Pattern(Vector(Element(1), Element(3))),
+      Pattern(Vector(Element(2), Element(2))),
       Pattern(Vector(Element(2), Element(3))),
       Pattern(Vector(Element(2), Element(1))),
       Pattern(Vector(Element(3), Element(1))),
       Pattern(Vector(Element(3), Element(2))),
+      Pattern(Vector(Element(3), Element(3))),
       Pattern(Vector(Element(1, 2))),
       Pattern(Vector(Element(2, 3))),
       Pattern(Vector(Element(1, 3))))
