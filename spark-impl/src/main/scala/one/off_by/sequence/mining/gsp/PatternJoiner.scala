@@ -107,7 +107,7 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
         }
       }
 
-    source map (p => (p, 1)) join subsequences map { case (_, (count, pattern)) =>
+    source map (p => (p, 1)) partitionBy partitioner join subsequences map { case (_, (count, pattern)) =>
       (pattern, count)
     } reduceByKey(partitioner, _ + _) filter { case (pattern, count) =>
       val expectedCount = pattern.elements.map(elements => {
