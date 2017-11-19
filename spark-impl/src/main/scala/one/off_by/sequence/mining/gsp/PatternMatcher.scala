@@ -1,7 +1,8 @@
 package one.off_by.sequence.mining.gsp
 
+import grizzled.slf4j.Logging
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
-import org.apache.spark.Partitioner
+import org.apache.spark.{Partitioner, SparkContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
@@ -9,46 +10,45 @@ import scala.annotation.tailrec
 import scala.collection.Searching
 import scala.collection.immutable.HashMap
 import scala.reflect.ClassTag
-
 import scala.language.postfixOps
 
-private[gsp] class PatternMatcher[ItemType, TimeType, DurationType, SequenceId: ClassTag](
+private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, SequenceId: ClassTag](
+  sc: SparkContext,
   partitioner: Partitioner,
   sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
   gspOptions: Option[GSPOptions[TimeType, DurationType]],
   minSupportCount: Long
-)(implicit timeOrdering: Ordering[TimeType]) {
+)(implicit timeOrdering: Ordering[TimeType]) extends Logging {
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
   type SupportCount = Long
 
-  private[gsp] val searchableSequences: RDD[SearchableSequenceType] = {
+  private[gsp] val searchableSequences: RDD[(Iterable[TransactionType], SearchableSequenceType)] = {
     implicit val localOrdering: Ordering[TimeType] = timeOrdering
     sequences.groupByKey()
-      .mapValues { sequence =>
-        PatternMatcher.buildSearchableSequence(sequence)(localOrdering)
-      }
       .map(_._2)
+      .map { sequence =>
+        (sequence, PatternMatcher.buildSearchableSequence(sequence)(localOrdering))
+      }
       .persist(StorageLevel.MEMORY_AND_DISK)
   }
 
   def filter(in: RDD[Pattern[ItemType]]): RDD[(Pattern[ItemType], SupportCount)] = {
+    val itemOrderingLocal = implicitly[Ordering[ItemType]]
     val timeOrderingLocal = timeOrdering
     val minSupportCountLocal = minSupportCount
     val gspOptionsLocal = gspOptions
 
-    //TODO: replace with some hash-like structure (idea: each element as bitmask and checking with OR)
-    in map (x => (x, 1L)) partitionBy partitioner cartesian searchableSequences mapPartitions({ pairs =>
-      (pairs filter { case ((pattern, _), searchableSequence) =>
-        PatternMatcher.matches(pattern, searchableSequence, gspOptionsLocal)(timeOrderingLocal)
-      } map { case ((pattern, _), _) =>
-        (pattern, 1L)
-      } toList) groupBy (_._1) map { case (pattern, elements) =>
-        (pattern, elements.map(_._2).sum)
-      } toIterator
-    }, true) reduceByKey {
-      _ + _
-    } filter { case (_, support) =>
+    val hashTrees = in.mapPartitions(patterns => {
+      val empty = HashTree.empty[ItemType, TimeType, DurationType, SequenceId](itemOrderingLocal, timeOrderingLocal)
+      ((empty /: patterns) (_ add _) :: Nil).toIterator
+    }, preservesPartitioning = true).cache()
+
+    hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, searchable)) =>
+      hashTree.findPossiblePatterns(gspOptionsLocal, sequence) filter { pattern =>
+        PatternMatcher.matches(pattern, searchable, gspOptionsLocal)(timeOrderingLocal)
+      } map (p => (p, 1L))
+    } reduceByKey (_ + _) filter { case (_, support) =>
       support >= minSupportCountLocal
     }
   }
@@ -181,7 +181,7 @@ private[gsp] object PatternMatcher {
       else {
         val element = rest.elements.head
         elementFinder.find(minTime, element) match {
-          case Some((startTime, endTime)) if timeOrdering.gt(startTime, maxTime) =>
+          case Some((startTime, _)) if timeOrdering.gt(startTime, maxTime) =>
             PatternExtendBacktrace(MinTime(applyMaxGapBack(startTime), inclusive = true))
 
           case Some((_, endTime)) =>

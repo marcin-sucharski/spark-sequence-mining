@@ -63,7 +63,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val minSupportCount = (sequenceCount * minSupport).toLong
     logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount.")
 
-    val patternMatcher = new PatternMatcher(partitioner, sequences, maybeOptions, minSupportCount)
+    val patternMatcher = new PatternMatcher(sc, partitioner, sequences, maybeOptions, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
       .persist(StorageLevels.MEMORY_AND_DISK)
@@ -152,7 +152,10 @@ object GSP {
         classOf[JoinItemExistingElement[Long]],
         classOf[PrefixResult[Long]],
         classOf[SuffixResult[Long]],
-        classOf[SearchableSequence[Long, Long, Long]]
+        classOf[SearchableSequence[Long, Long, Long]],
+        classOf[HashTree[Long, Long, Long, Long]],
+        classOf[HashTreeLeaf[Long, Long, Long, Long]],
+        classOf[HashTreeNode[Long, Long, Long, Long]]
       ))
     val sc: SparkContext = new SparkContext(conf)
     sc.setLogLevel("WARN")

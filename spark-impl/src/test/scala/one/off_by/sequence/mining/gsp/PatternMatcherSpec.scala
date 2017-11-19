@@ -57,9 +57,10 @@ class PatternMatcherSpec extends FreeSpec
           )
         )
 
-        val patternMatcher = new PatternMatcher[Int, Int, Int, Int](partitioner, sc.parallelize(sequences), None, 0L)
+        val patternMatcher = new PatternMatcher[Int, Int, Int, Int](
+          sc, partitioner, sc.parallelize(sequences), None, 0L)
 
-        patternMatcher.searchableSequences.collect() should contain theSameElementsAs output
+        patternMatcher.searchableSequences.map(_._2).collect() should contain theSameElementsAs output
       }
     }
 
@@ -80,7 +81,7 @@ class PatternMatcherSpec extends FreeSpec
 
         val minSupport = 2L
         val patternMatcher = new PatternMatcher[Int, Int, Int, Int](
-          partitioner,sc.parallelize(sequences), None, minSupport)
+          sc, partitioner,sc.parallelize(sequences), None, minSupport)
 
         patternMatcher.filter(sc.parallelize(input)).collect().map(_._1) should contain theSameElementsAs output
       }
