@@ -15,7 +15,7 @@ case class Taxonomy[ItemType](
 
 case class Element[ItemType](
   items: Set[ItemType]
-) extends AnyVal {
+) {
   def +(item: ItemType): Element[ItemType] =
     Element(items + item)
 

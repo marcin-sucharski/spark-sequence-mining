@@ -3,8 +3,8 @@ package one.off_by.sequence.mining.gsp
 import grizzled.slf4j.Logging
 import org.apache.spark.Partitioner
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 
-//TODO: check without PatternHasher
 private[gsp] class PatternJoiner[ItemType: Ordering](
   partitioner: Partitioner
 ) extends Logging {
@@ -12,8 +12,7 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
   import PatternJoiner._
 
   def generateCandidates(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
-    patterns.cache()
-    pruneMatches(joinPatterns(patterns), patterns)
+    pruneMatches(joinPatterns(patterns), patterns).persist(StorageLevel.MEMORY_AND_DISK_SER)
   }
 
   private[gsp] def joinPatterns(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
@@ -88,40 +87,40 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
       val joinItemPrefixes = rawPrefixes.filter(_.pattern.elements.nonEmpty)
       val joinItemSuffixes = rawSuffixes.filter(_.pattern.elements.nonEmpty)
 
-      def processDifferent(
+      def process(
         initialPrefixes: RDD[PatternJoiner.PrefixResult[ItemType]],
         initialSuffixes: RDD[PatternJoiner.SuffixResult[ItemType]]
       ): RDD[(PatternJoiner.PrefixResult[ItemType], PatternJoiner.SuffixResult[ItemType])] =
         initialPrefixes.cartesian(initialSuffixes) filter { case (prefix, suffix) =>
           (prefix.joinItem, suffix.joinItem) match {
-            case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
-              !ordering.eq(suffixItem, prefixItem)
-
             case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
-              ordering.lt(suffixItem, prefixItem)
+              ordering.lteq(suffixItem, prefixItem)
+
+            case _ =>
+              true
           }
         }
 
-      def processEqual(
-        initialPrefixes: RDD[PatternJoiner.PrefixResult[ItemType]],
-        initialSuffixes: RDD[PatternJoiner.SuffixResult[ItemType]]
-      ): RDD[(PatternJoiner.PrefixResult[ItemType], PatternJoiner.SuffixResult[ItemType])] =
-        initialPrefixes.cartesian(initialSuffixes) filter { case (prefix, suffix) =>
-          ordering.eq(prefix.joinItem.item, suffix.joinItem.item)
-        }
-
-      processDifferent(newItemPrefixes, newItemSuffixes)
-        .union(processEqual(newItemPrefixes, newItemSuffixes))
-        .union(processDifferent(joinItemPrefixes, joinItemSuffixes))
-        .union(processEqual(joinItemPrefixes, joinItemSuffixes))
-    } else prefixes.partitionBy(partitioner) join suffixes map (_._2)
+      process(newItemPrefixes, newItemSuffixes)
+        .union(process(joinItemPrefixes, joinItemSuffixes))
+        .coalesce(partitioner.numPartitions * partitioner.numPartitions)
+    } else prefixes join suffixes map (_._2)
   }
 
   private[gsp] def pruneMatches(
     matches: RDD[Pattern[ItemType]],
     source: RDD[Pattern[ItemType]]
   ): RDD[Pattern[ItemType]] = {
+    val isFirst = source.take(1).head.elements.map(_.items.size).sum == 1
 
+    if (isFirst) matches
+    else pruneMatchesForPatternsLongerThanTwoItems(matches, source)
+  }
+
+  private def pruneMatchesForPatternsLongerThanTwoItems(
+    matches: RDD[Pattern[ItemType]],
+    source: RDD[Pattern[ItemType]]
+  ): RDD[Pattern[ItemType]] = {
     val subsequences = matches
       .flatMap { pattern =>
         pattern.elements.indices flatMap { index =>
@@ -134,15 +133,16 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
         }
       }
 
-    source map (p => (p, 1)) partitionBy partitioner join subsequences map { case (_, (count, pattern)) =>
-      (pattern, count)
-    } reduceByKey(partitioner, _ + _) filter { case (pattern, count) =>
+    source map (p => (p, 1)) cogroup subsequences flatMap { case (_, (counts, patterns)) =>
+      if (counts.nonEmpty) patterns map (p => (p, 1))
+      else Nil
+    } reduceByKey(_ + _, partitioner.numPartitions * partitioner.numPartitions) filter { case (pattern, count) =>
       val expectedCount = pattern.elements.map(elements => {
         if (elements.items.size > 1) elements.items.size
         else 0
       }).sum
       count == expectedCount
-    } map(_._1) union matches.filter(p => p.elements.size == 2 && p.elements.forall(_.items.size == 1))
+    } map (_._1) union matches.filter(p => p.elements.size == 2 && p.elements.forall(_.items.size == 1))
   }
 }
 

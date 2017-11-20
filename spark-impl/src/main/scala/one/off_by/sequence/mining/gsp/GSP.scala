@@ -6,6 +6,7 @@ import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItemExistingElement, Jo
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.api.java.StorageLevels
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
 import scala.language.postfixOps
@@ -39,7 +40,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
 
   private[gsp] val partitioner: Partitioner =
-    new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2) * 4)
+    new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2))
 
   private val patternJoiner = new PatternJoiner[ItemType](partitioner)
 
@@ -57,7 +58,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val sequences: RDD[(SequenceId, TransactionType)] = transactions
       .map(t => (t.sequenceId, t))
       .partitionBy(partitioner)
-      .cache()
+      .persist(StorageLevel.MEMORY_ONLY_SER)
 
     val sequenceCount = sequences.keys.distinct.count()
     val minSupportCount = (sequenceCount * minSupport).toLong
@@ -66,14 +67,14 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val patternMatcher = new PatternMatcher(sc, partitioner, sequences, maybeOptions, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
-      .persist(StorageLevels.MEMORY_AND_DISK)
+      .persist(StorageLevels.MEMORY_AND_DISK_SER)
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
     val result = Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
       val newLength = prevLength + 1
       logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))
       val phaseResult = patternMatcher.filter(candidates)
-        .persist(StorageLevels.MEMORY_AND_DISK)
+        .persist(StorageLevels.MEMORY_AND_DISK_SER)
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
     } takeWhile (!_.lastPattern.isEmpty()) map (_.result.mapValues(_.toDouble / sequenceCount.toDouble)) lastOption
@@ -144,18 +145,19 @@ object GSP {
       .setAppName("GSP")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .registerKryoClasses(Array(
-        classOf[Transaction[Long, Long, Long]],
-        classOf[Taxonomy[Long]],
-        classOf[Element[Long]],
-        classOf[Pattern[Long]],
-        classOf[JoinItemNewElement[Long]],
-        classOf[JoinItemExistingElement[Long]],
-        classOf[PrefixResult[Long]],
-        classOf[SuffixResult[Long]],
-        classOf[SearchableSequence[Long, Long, Long]],
-        classOf[HashTree[Long, Long, Long, Long]],
-        classOf[HashTreeLeaf[Long, Long, Long, Long]],
-        classOf[HashTreeNode[Long, Long, Long, Long]]
+        classOf[Transaction[_, _, _]],
+        classOf[Taxonomy[_]],
+        classOf[Element[_]],
+        classOf[Pattern[_]],
+        classOf[Array[Pattern[_]]],
+        classOf[JoinItemNewElement[_]],
+        classOf[JoinItemExistingElement[_]],
+        classOf[PrefixResult[_]],
+        classOf[SuffixResult[_]],
+        classOf[SearchableSequence[_, _, _]],
+        classOf[HashTree[_, _, _, _]],
+        classOf[HashTreeLeaf[_, _, _, _]],
+        classOf[HashTreeNode[_, _, _, _]]
       ))
     val sc: SparkContext = new SparkContext(conf)
     sc.setLogLevel("WARN")
