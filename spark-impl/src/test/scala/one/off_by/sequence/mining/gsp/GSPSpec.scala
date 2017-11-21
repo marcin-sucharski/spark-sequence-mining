@@ -16,8 +16,7 @@ class GSPSpec extends WordSpec
         Transaction("C1", 15, Set("Ringworld Engineers", "Second Foundation")),
         Transaction("C2", 1, Set("Foundation", "Ringworld")),
         Transaction("C2", 20, Set("Foundation and Empire")),
-        Transaction("C2", 50, Set("Ringworld Engineers"))
-      )
+        Transaction("C2", 50, Set("Ringworld Engineers")))
 
       "works with example data" in {
         val gsp = new GSP[String, Int, Int, String](sc)
@@ -30,8 +29,31 @@ class GSPSpec extends WordSpec
           Pattern(Vector(Element("Foundation"))),
           Pattern(Vector(Element("Ringworld Engineers"))),
           Pattern(Vector(Element("Ringworld"), Element("Ringworld Engineers"))),
-          Pattern(Vector(Element("Foundation"), Element("Ringworld Engineers")))
-        )
+          Pattern(Vector(Element("Foundation"), Element("Ringworld Engineers"))))
+      }
+
+      "works with longer sequences" in {
+        val transactions = List[Transaction[Int, Int, Int]](
+          Transaction(1, 10, Set(1)),
+          Transaction(1, 20, Set(2)),
+          Transaction(1, 30, Set(3)),
+          Transaction(1, 40, Set(4)),
+
+          Transaction(2, 10, Set(1)),
+          Transaction(2, 20, Set(2)),
+          Transaction(2, 30, Set(3)),
+          Transaction(2, 40, Set(4)),
+
+          Transaction(3, 10, Set(1)),
+          Transaction(3, 20, Set(2)),
+          Transaction(3, 30, Set(3)),
+          Transaction(3, 40, Set(4)))
+
+        val gsp = new GSP[Int, Int, Int, Int](sc)
+        val input = sc.parallelize(transactions)
+
+        gsp.execute(input, 1.0).collect().map(_._1) should contain (
+          Pattern(Vector(Element(1), Element(2), Element(3), Element(4))))
       }
     }
 
@@ -63,8 +85,7 @@ class GSPSpec extends WordSpec
           Pattern(Vector(Element(1))),
           Pattern(Vector(Element(2))),
           Pattern(Vector(Element(3))),
-          Pattern(Vector(Element(4)))
-        )
+          Pattern(Vector(Element(4))))
       }
 
       "do not return initial patterns with support below min support" in withGSP { gsp =>
@@ -89,8 +110,7 @@ class GSPSpec extends WordSpec
         result should contain theSameElementsAs List(
           (Pattern(Vector(Element(2))), 2L),
           (Pattern(Vector(Element(3))), 3L),
-          (Pattern(Vector(Element(4))), 3L)
-        )
+          (Pattern(Vector(Element(4))), 3L))
       }
     }
   }

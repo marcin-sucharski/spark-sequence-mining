@@ -58,7 +58,8 @@ private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, Dur
     val hash = getHash(iterable.head)
     children.get(hash) match {
       case Some(node) =>
-        node.addInternal(pattern, iterable.tail)
+        copy(children = children.updated(hash, node.addInternal(pattern, iterable.tail)))
+
       case None =>
         copy(children = children.updated(
           hash,
@@ -140,7 +141,7 @@ private[gsp] case class HashTreeLeaf[ItemType: Ordering, TimeType: Ordering, Dur
 }
 
 private object HashTreeUtils {
-  val maxLeafSize: Int = 32
+  val maxLeafSize: Int = 8
 
   @inline
   def getLength[ItemType](pattern: Pattern[ItemType]): Int =

@@ -88,6 +88,29 @@ class PatternJoinerSpec extends WordSpec
 
         result should contain theSameElementsAs afterPruneSingleItemPatterns
       }
+
+      "works correctly with matches generated from double-item patterns" in withPatternJoiner[Int] { joiner =>
+        val source = sc parallelize List(
+          Pattern(Vector(Element(2), Element(4))),
+          Pattern(Vector(Element(2), Element(3))),
+          Pattern(Vector(Element(1), Element(2))),
+          Pattern(Vector(Element(1), Element(4))),
+          Pattern(Vector(Element(3), Element(4))),
+          Pattern(Vector(Element(1), Element(3))))
+        val afterJoin = sc parallelize List(
+          Pattern(Vector(Element(1), Element(2), Element(3))),
+          Pattern(Vector(Element(1), Element(2), Element(4))),
+          Pattern(Vector(Element(2), Element(3), Element(4))),
+          Pattern(Vector(Element(1), Element(3), Element(4))))
+
+        val result = joiner.pruneMatches(afterJoin, source).collect()
+
+        result should contain theSameElementsAs List(
+          Pattern(Vector(Element(1), Element(2), Element(3))),
+          Pattern(Vector(Element(1), Element(2), Element(4))),
+          Pattern(Vector(Element(2), Element(3), Element(4))),
+          Pattern(Vector(Element(1), Element(3), Element(4))))
+      }
     }
   }
 

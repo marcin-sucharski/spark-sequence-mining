@@ -7,11 +7,12 @@ import org.apache.spark.storage.StorageLevel
 
 private[gsp] class PatternJoiner[ItemType: Ordering](
   partitioner: Partitioner
-) extends Logging {
+) extends LoggingUtils {
 
   import PatternJoiner._
 
   def generateCandidates(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
+    logger.trace(s"Generating candidates from: ${patterns.collect().mkString("\n", "\n", "\n")}")
     pruneMatches(joinPatterns(patterns), patterns).persist(StorageLevel.MEMORY_AND_DISK_SER)
   }
 
@@ -28,9 +29,8 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
 
     val initialData = joinSuffixesAndPrefixes(prefixes, suffixes, isFirst) filter { case (prefix, suffix) =>
       val common = prefix.pattern.elements
-      val itemsCount = common.map(_.items.size).sum
       (prefix.joinItem, suffix.joinItem) match {
-        case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
+        case (JoinItemNewElement(_), JoinItemNewElement(_)) =>
           true
 
         case (JoinItemExistingElement(suffixItem), JoinItemNewElement(_)) =>
@@ -111,6 +111,8 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
     matches: RDD[Pattern[ItemType]],
     source: RDD[Pattern[ItemType]]
   ): RDD[Pattern[ItemType]] = {
+    logger.trace(s"Pruning matches: ${matches.collect().mkString("\n", "\n", "\n")}")
+
     val isFirst = source.take(1).head.elements.map(_.items.size).sum == 1
 
     if (isFirst) matches
@@ -133,16 +135,22 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
         }
       }
 
-    source map (p => (p, 1)) cogroup subsequences flatMap { case (_, (counts, patterns)) =>
+    logger.trace(s"Prune subsequences: ${subsequences.map(_._1).toPrettyList}")
+
+    val countedSubsequences = source map (p => (p, 1)) cogroup subsequences flatMap { case (_, (counts, patterns)) =>
       if (counts.nonEmpty) patterns map (p => (p, 1))
       else Nil
-    } reduceByKey(_ + _, partitioner.numPartitions * partitioner.numPartitions) filter { case (pattern, count) =>
+    } reduceByKey(_ + _, partitioner.numPartitions * partitioner.numPartitions)
+
+    logger.trace(s"Counted subsequences: ${countedSubsequences.toPrettyList}")
+
+    countedSubsequences filter { case (pattern, count) =>
       val expectedCount = pattern.elements.map(elements => {
         if (elements.items.size > 1) elements.items.size
         else 0
       }).sum
       count == expectedCount
-    } map (_._1) union matches.filter(p => p.elements.size == 2 && p.elements.forall(_.items.size == 1))
+    } map (_._1) union matches.filter(p => p.elements.forall(_.items.size == 1))
   }
 }
 

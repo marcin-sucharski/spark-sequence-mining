@@ -1,7 +1,7 @@
 package one.off_by.sequence.mining.gsp
 
 import grizzled.slf4j.Logging
-import one.off_by.sequence.mining.gsp.Domain.Support
+import one.off_by.sequence.mining.gsp.Domain.{Support, SupportCount}
 import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItemExistingElement, JoinItemNewElement, PrefixResult, SuffixResult}
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.api.java.StorageLevels
@@ -50,7 +50,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     minItemsInPattern: Long = 1L,
     maybeTaxonomies: Option[RDD[TaxonomyType]] = None,
     maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None
-  ): RDD[(Pattern[ItemType], Support)] = {
+  ): RDD[(Pattern[ItemType], SupportCount)] = {
     def maybeFilterOut(itemsCount: Long, result: RDD[(Pattern[ItemType], SupportCount)]) =
       if (itemsCount >= minItemsInPattern) result
       else sc.parallelize(List.empty[(Pattern[ItemType], SupportCount)])
@@ -73,13 +73,15 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
       val newLength = prevLength + 1
       logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))
+      logger.trace(s"Candidates: ${candidates.map(_.toString).collect().mkString("\n", "\n", "\n")}")
       val phaseResult = patternMatcher.filter(candidates)
         .persist(StorageLevels.MEMORY_AND_DISK_SER)
+      logger.info(s"Phase result: ${phaseResult.map(_._1.toString).collect().mkString("\n", "\n", "\n")}")
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
-    } takeWhile (!_.lastPattern.isEmpty()) map (_.result.mapValues(_.toDouble / sequenceCount.toDouble)) lastOption
+    } takeWhile (!_.lastPattern.isEmpty()) lastOption
 
-    result.getOrElse(sc.parallelize(Nil))
+    result.map(_.result).getOrElse(sc.parallelize(Nil))
   }
 
   private case class State(
@@ -179,6 +181,7 @@ object GSP {
       .flatMap(parseLineIntoTransaction)
 
     gsp.execute(input, minSupport, minItemsInPattern, None, maybeOptions)
+      .sortBy(x => (x._1.elements.map(_.items.size).sum, x._2))
       .map(mapResultToString)
       .saveAsTextFile(outputFile)
 
@@ -200,8 +203,8 @@ object GSP {
         sys.error(s"malformed line: $line")
     }
 
-  def mapResultToString(result: (Pattern[Long], Support)): String =
-    s"${result._2 * 100.0} # ${result._1}"
+  def mapResultToString(result: (Pattern[Long], SupportCount)): String =
+    s"${result._2} # ${result._1}"
 
   val longTypeSupport: GSPTypeSupport[Long, Long] = GSPTypeSupport[Long, Long](
     (a, b) => b - a,

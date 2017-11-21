@@ -30,7 +30,8 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
       .map { sequence =>
         (sequence, PatternMatcher.buildSearchableSequence(sequence)(localOrdering))
       }
-      .persist(StorageLevel.MEMORY_AND_DISK)
+      .repartition(partitioner.numPartitions)
+      .persist(StorageLevel.MEMORY_AND_DISK_SER)
   }
 
   def filter(in: RDD[Pattern[ItemType]]): RDD[(Pattern[ItemType], SupportCount)] = {
@@ -39,16 +40,30 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
     val minSupportCountLocal = minSupportCount
     val gspOptionsLocal = gspOptions
 
-    val hashTrees = in.mapPartitions(patterns => {
+    val hashTrees = in mapPartitions { patterns =>
       val empty = HashTree.empty[ItemType, TimeType, DurationType, SequenceId](itemOrderingLocal, timeOrderingLocal)
       ((empty /: patterns) (_ add _) :: Nil).toIterator
-    }, preservesPartitioning = true).cache()
+    } coalesce partitioner.numPartitions
 
-    hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, searchable)) =>
+    logger trace {
+      val beforeMatching = hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, _)) =>
+        hashTree.findPossiblePatterns(gspOptionsLocal, sequence)
+      } map (_.toString)
+      s"Candidates before matching: ${beforeMatching.distinct().collect().mkString("\n", "\n", "\n")}"
+    }
+
+    val counted = hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, searchable)) =>
       hashTree.findPossiblePatterns(gspOptionsLocal, sequence) filter { pattern =>
         PatternMatcher.matches(pattern, searchable, gspOptionsLocal)(timeOrderingLocal)
       } map (p => (p, 1L))
-    } reduceByKey (_ + _) filter { case (_, support) =>
+    } reduceByKey (_ + _)
+
+    logger trace {
+      val humanReadable = counted.map(p => s"${p._1} -> ${p._2}")
+      s"Counted candidates in pattern matcher: ${humanReadable.collect().mkString("\n", "\n", "\n")}"
+    }
+
+    counted filter { case (_, support) =>
       support >= minSupportCountLocal
     }
   }

@@ -156,18 +156,20 @@ class PatternMatcherCompanionSpec extends FreeSpec
           Transaction(1, 95, Set(6))
         )
 
+        type MatchesFunction[ItemType] = Pattern[ItemType] => Boolean
+
+        def withMatcher(
+          options: Option[GSPOptions[Int, Int]],
+          testSequence: List[Transaction[Int, Int, Int]] = sequence
+        )(f: MatchesFunction[Int] => Unit): Unit = {
+          f(PatternMatcher.matches[Int, Int, Int, Int](
+            _,
+            PatternMatcher.buildSearchableSequence(testSequence),
+            options
+          ))
+        }
+
         "for specified transaction set" - {
-
-          type MatchesFunction[ItemType] = Pattern[ItemType] => Boolean
-
-          def withMatcher(options: Option[GSPOptions[Int, Int]])(f: MatchesFunction[Int] => Unit): Unit = {
-            f(PatternMatcher.matches[Int, Int, Int, Int](
-              _,
-              PatternMatcher.buildSearchableSequence(sequence),
-              options
-            ))
-          }
-
           "with no gsp options" - {
             val matching = List[Pattern[Int]](
               Pattern(Vector(Element(1, 2))),
@@ -316,6 +318,18 @@ class PatternMatcherCompanionSpec extends FreeSpec
               s"does not match $pattern" in withMatcher(options) { matches =>
                 matches(pattern) shouldBe false
               }
+          }
+        }
+
+        "for regression test cases" - {
+          val linearSequence = List[Transaction[Int, Int, Int]](
+            Transaction(1, 10, Set(1)),
+            Transaction(1, 20, Set(2)),
+            Transaction(1, 30, Set(3)),
+            Transaction(1, 40, Set(4)))
+
+          "return correct result for sequence 1 2 3 4" in withMatcher(None, linearSequence) { matches =>
+            matches(Pattern(Vector(Element(1), Element(2)))) shouldBe true
           }
         }
       }
