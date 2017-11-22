@@ -76,7 +76,6 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
       logger.trace(s"Candidates: ${candidates.map(_.toString).collect().mkString("\n", "\n", "\n")}")
       val phaseResult = patternMatcher.filter(candidates)
         .persist(StorageLevels.MEMORY_AND_DISK_SER)
-      logger.info(s"Phase result: ${phaseResult.map(_._1.toString).collect().mkString("\n", "\n", "\n")}")
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
     } takeWhile (!_.lastPattern.isEmpty()) lastOption
