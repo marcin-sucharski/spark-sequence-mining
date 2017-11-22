@@ -1,6 +1,5 @@
 package one.off_by.sequence.mining.gsp
 
-import grizzled.slf4j.Logging
 import org.apache.spark.Partitioner
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
@@ -126,12 +125,10 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
     val subsequences = matches
       .flatMap { pattern =>
         pattern.elements.indices flatMap { index =>
-          if (pattern.elements(index).items.size > 1) {
-            allSubsetsWithoutSingleItem(pattern.elements(index).items).map(_._2) map { newElement =>
-              val result = Pattern(pattern.elements.updated(index, newElement))
-              (result, pattern)
-            }
-          } else Nil
+          allSubsetsWithoutSingleItem(pattern.elements(index).items).map(_._2) map { newElement =>
+            val result = Pattern(pattern.elements.updated(index, newElement).filter(_.items.nonEmpty))
+            (result, pattern)
+          }
         }
       }
 
@@ -145,12 +142,9 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
     logger.trace(s"Counted subsequences: ${countedSubsequences.toPrettyList}")
 
     countedSubsequences filter { case (pattern, count) =>
-      val expectedCount = pattern.elements.map(elements => {
-        if (elements.items.size > 1) elements.items.size
-        else 0
-      }).sum
+      val expectedCount = pattern.elements.view.map(_.items.size).sum
       count == expectedCount
-    } map (_._1) union matches.filter(p => p.elements.forall(_.items.size == 1))
+    } map (_._1)
   }
 }
 

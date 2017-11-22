@@ -105,11 +105,22 @@ class PatternJoinerSpec extends WordSpec
 
         val result = joiner.pruneMatches(afterJoin, source).collect()
 
-        result should contain theSameElementsAs List(
-          Pattern(Vector(Element(1), Element(2), Element(3))),
-          Pattern(Vector(Element(1), Element(2), Element(4))),
-          Pattern(Vector(Element(2), Element(3), Element(4))),
-          Pattern(Vector(Element(1), Element(3), Element(4))))
+        result should contain theSameElementsAs afterJoin.collect()
+      }
+
+      "works correctly for multi-item elements" in withPatternJoiner[Int] { joiner =>
+        val source = sc parallelize List(
+          Pattern(Vector(Element(1), Element(2), Element(3, 4))),
+          Pattern(Vector(Element(1), Element(2), Element(3, 5))),
+          Pattern(Vector(Element(1), Element(2), Element(4, 5))),
+          Pattern(Vector(Element(1), Element(3, 4, 5))),
+          Pattern(Vector(Element(2), Element(3, 4, 5))))
+        val afterJoin = sc parallelize List(
+          Pattern(Vector(Element(1), Element(2), Element(3, 4, 5))))
+
+        val result = joiner.pruneMatches(afterJoin, source).collect()
+
+        result should contain theSameElementsAs afterJoin.collect()
       }
     }
   }
