@@ -111,6 +111,10 @@ class PatternJoinerSpec extends WordSpec
           Pattern(Vector(Element(2), Element(3), Element(4))),
           Pattern(Vector(Element(1), Element(3), Element(4))))
       }
+
+      "works correctly for multi-item elements" in withPatternJoiner[Int] { joiner =>
+        ???
+      }
     }
   }
 
