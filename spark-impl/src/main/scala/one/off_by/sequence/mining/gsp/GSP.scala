@@ -166,12 +166,12 @@ object GSP {
     val inputFile = getArg(args)("in")
     val outputFile = getArg(args)("out")
     val minSupport = findArg(args)("min-support").map(_.toDouble).getOrElse(0.5)
-    val minItemsInPattern = findArg(args)("min-items-in-pattern").map(_.toLong).getOrElse(1L)
-    val windowSize = findArg(args)("window-size").map(_.toLong)
-    val minGap = findArg(args)("min-gap").map(_.toLong)
-    val maxGap = findArg(args)("max-gap").map(_.toLong)
+    val minItemsInPattern = findArg(args)("min-items-in-pattern").map(_.toInt).getOrElse(1)
+    val windowSize = findArg(args)("window-size").map(_.toInt)
+    val minGap = findArg(args)("min-gap").map(_.toInt)
+    val maxGap = findArg(args)("max-gap").map(_.toInt)
 
-    val gsp = new GSP[Long, Long, Long, Long](sc)
+    val gsp = new GSP[Int, Int, Int, Int](sc)
     val maybeOptions = Some(GSPOptions(longTypeSupport, windowSize, minGap, maxGap))
       .filter(_ => windowSize.isDefined || minGap.isDefined || maxGap.isDefined)
 
@@ -188,24 +188,24 @@ object GSP {
     Console.in.readLine()
   }
 
-  def parseLineIntoTransaction(line: String): Seq[Transaction[Long, Long, Long]] =
-    (try line.split("-1").map(_.split(" ").map(_.trim).filter(_.nonEmpty).map(_.toLong).toList).toList catch {
+  def parseLineIntoTransaction(line: String): Seq[Transaction[Int, Int, Int]] =
+    (try line.split("-1").map(_.split(" ").map(_.trim).filter(_.nonEmpty).map(_.toInt).toList).toList catch {
       case NonFatal(e) =>
         sys.error(s"malformed line due to ${e.getLocalizedMessage}: $line")
     }) match {
       case (sequenceId :: Nil) :: itemsets =>
         itemsets.filter(_.nonEmpty).zipWithIndex map { case (items, index) =>
-          Transaction[Long, Long, Long](sequenceId, index + 1, items.toSet)
+          Transaction[Int, Int, Int](sequenceId, index + 1, items.toSet)
         }
 
       case _ =>
         sys.error(s"malformed line: $line")
     }
 
-  def mapResultToString(result: (Pattern[Long], SupportCount)): String =
+  def mapResultToString(result: (Pattern[Int], SupportCount)): String =
     s"${result._2} # ${result._1}"
 
-  val longTypeSupport: GSPTypeSupport[Long, Long] = GSPTypeSupport[Long, Long](
+  val longTypeSupport: GSPTypeSupport[Int, Int] = GSPTypeSupport[Int, Int](
     (a, b) => b - a,
     (a, b) => a - b,
     (a, b) => a + b)
