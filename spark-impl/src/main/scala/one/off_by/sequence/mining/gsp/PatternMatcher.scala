@@ -43,7 +43,7 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
     val hashTrees = in mapPartitions { patterns =>
       val empty = HashTree.empty[ItemType, TimeType, DurationType, SequenceId](itemOrderingLocal, timeOrderingLocal)
       ((empty /: patterns) (_ add _) :: Nil).toIterator
-    } coalesce partitioner.numPartitions
+    }
 
     logger trace {
       val beforeMatching = hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, _)) =>
