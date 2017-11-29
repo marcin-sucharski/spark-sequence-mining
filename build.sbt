@@ -8,10 +8,14 @@ scalaVersion := scalaV
 
 lazy val commonSettings = Seq(
   scalaVersion := scalaV,
-  scalacOptions ++= Seq("-optimize", "-Yinline-warnings"))
+  scalacOptions ++= Seq(
+    "-optimize",
+    "-Yinline-warnings",
+    "-Xelide-below", "3000"))
 
 lazy val dataGenerator = (project in file("data-generator"))
   .settings(commonSettings)
+  .dependsOn(sparkImpl)
 
 lazy val sparkImpl = (project in file("spark-impl"))
   .settings(commonSettings ++ Seq(
