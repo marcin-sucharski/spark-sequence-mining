@@ -1,16 +1,14 @@
 package one.off_by.sequence.mining.gsp
 
-import grizzled.slf4j.Logging
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
-import org.apache.spark.{Partitioner, SparkContext}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.storage.StorageLevel
+import org.apache.spark.{Partitioner, SparkContext}
 
 import scala.annotation.tailrec
 import scala.collection.Searching
 import scala.collection.immutable.HashMap
-import scala.reflect.ClassTag
 import scala.language.postfixOps
+import scala.reflect.ClassTag
 
 private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, SequenceId: ClassTag](
   sc: SparkContext,
@@ -26,7 +24,7 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
   private[gsp] val searchableSequences: RDD[(Iterable[TransactionType], SearchableSequenceType)] = {
     implicit val localOrdering: Ordering[TimeType] = timeOrdering
     sequences.groupByKey()
-      .map(_._2)
+      .values
       .map { sequence =>
         (sequence, PatternMatcher.buildSearchableSequence(sequence)(localOrdering))
       }
