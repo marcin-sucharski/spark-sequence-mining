@@ -34,9 +34,9 @@ class PatternMatcherSpec extends FreeSpec
             Map(
               2 -> Vector(1, 3),
               3 -> Vector(2, 3),
-              5 -> Vector(4)
-            )
-          ),
+              5 -> Vector(4)),
+            1,
+            4),
           PatternMatcher.SearchableSequence(
             2,
             Map(
@@ -44,18 +44,17 @@ class PatternMatcherSpec extends FreeSpec
               2 -> Vector(2),
               3 -> Vector(3),
               4 -> Vector(3),
-              5 -> Vector(3)
-            )
-          ),
+              5 -> Vector(3)),
+            1,
+            3),
           PatternMatcher.SearchableSequence(
             3,
             Map(
               1 -> Vector(1, 2, 3),
               2 -> Vector(1, 2, 3),
-              3 -> Vector(1, 2, 3)
-            )
-          )
-        )
+              3 -> Vector(1, 2, 3)),
+            1,
+            3))
 
         val patternMatcher = new PatternMatcher[Int, Int, Int, Int](
           sc, partitioner, sc.parallelize(sequences), None, 0L)
@@ -70,14 +69,12 @@ class PatternMatcherSpec extends FreeSpec
           Pattern(Vector(Element(2), Element(3), Element(2))),
           Pattern(Vector(Element(3), Element(2), Element(5))),
           Pattern(Vector(Element(1), Element(1), Element(3))),
-          Pattern(Vector(Element(3), Element(2, 3)))
-        )
+          Pattern(Vector(Element(3), Element(2, 3))))
 
         val output = List[Pattern[Int]](
           Pattern(Vector(Element(2), Element(3), Element(2))),
           Pattern(Vector(Element(1), Element(1), Element(3))),
-          Pattern(Vector(Element(3), Element(2, 3)))
-        )
+          Pattern(Vector(Element(3), Element(2, 3))))
 
         val minSupport = 2L
         val patternMatcher = new PatternMatcher[Int, Int, Int, Int](
@@ -103,9 +100,9 @@ class PatternMatcherCompanionSpec extends FreeSpec
           1,
           Map(
             1 -> Vector(1, 2, 3),
-            2 -> Vector(3, 5, 7)
-          )
-        )
+            2 -> Vector(3, 5, 7)),
+          1,
+          7)
 
         "provides 'findFirstOccurrence' method which" - {
           "returns first item occurrence time if it exists" in {
@@ -153,8 +150,7 @@ class PatternMatcherCompanionSpec extends FreeSpec
           Transaction(1, 50, Set(1, 2)),
           Transaction(1, 65, Set(3)),
           Transaction(1, 90, Set(2, 4)),
-          Transaction(1, 95, Set(6))
-        )
+          Transaction(1, 95, Set(6)))
 
         type MatchesFunction[ItemType] = Pattern[ItemType] => Boolean
 
@@ -177,15 +173,13 @@ class PatternMatcherCompanionSpec extends FreeSpec
               Pattern(Vector(Element(1), Element(3))),
               Pattern(Vector(Element(4), Element(6))),
               Pattern(Vector(Element(3), Element(2), Element(3), Element(2))),
-              Pattern(Vector(Element(1, 2), Element(1, 2), Element(6)))
-            )
+              Pattern(Vector(Element(1, 2), Element(1, 2), Element(6))))
             val notMatching = List[Pattern[Int]](
               Pattern(Vector(Element(8))),
               Pattern(Vector(Element(1, 2), Element(7))),
               Pattern(Vector(Element(7), Element(1, 2))),
               Pattern(Vector(Element(1), Element(1), Element(1), Element(1), Element(1))),
-              Pattern(Vector(Element(1, 2, 6)))
-            )
+              Pattern(Vector(Element(1, 2, 6))))
 
             val emptyOptions = Some(GSPOptions[Int, Int](typeSupport))
             for (pattern <- matching) {
@@ -217,13 +211,11 @@ class PatternMatcherCompanionSpec extends FreeSpec
               Pattern(Vector(Element(1, 2), Element(2, 4))),
               Pattern(Vector(Element(1, 2, 4, 6))),
               Pattern(Vector(Element(1, 2, 4), Element(2, 4, 6))),
-              Pattern(Vector(Element(1, 2, 4), Element(1, 2), Element(2, 4, 6)))
-            )
+              Pattern(Vector(Element(1, 2, 4), Element(1, 2), Element(2, 4, 6))))
             val notMatching = List[Pattern[Int]](
               Pattern(Vector(Element(1, 2, 4, 6, 3))),
               Pattern(Vector(Element(4, 6, 3))),
-              Pattern(Vector(Element(4, 6), Element(3, 2, 4)))
-            )
+              Pattern(Vector(Element(4, 6), Element(3, 2, 4))))
 
             for (pattern <- matching)
               s"matches $pattern" in withMatcher(options) { matches =>
@@ -243,14 +235,12 @@ class PatternMatcherCompanionSpec extends FreeSpec
               Pattern(Vector(Element(1, 2), Element(3))),
               Pattern(Vector(Element(1, 2), Element(2, 4))),
               Pattern(Vector(Element(1), Element(6))),
-              Pattern(Vector(Element(4, 6), Element(3)))
-            )
+              Pattern(Vector(Element(4, 6), Element(3))))
             val notMatching = List[Pattern[Int]](
               Pattern(Vector(Element(1, 2), Element(4, 6))),
               Pattern(Vector(Element(1), Element(4, 6))),
               Pattern(Vector(Element(2, 4), Element(6))),
-              Pattern(Vector(Element(3), Element(1, 2)))
-            )
+              Pattern(Vector(Element(3), Element(1, 2))))
 
             for (pattern <- matching)
               s"matches $pattern" in withMatcher(options) { matches =>
@@ -270,12 +260,10 @@ class PatternMatcherCompanionSpec extends FreeSpec
               Pattern(Vector(Element(1, 2), Element(3), Element(3), Element(6))),
               Pattern(Vector(Element(4, 6), Element(3), Element(2, 4))),
               Pattern(Vector(Element(6), Element(2), Element(4))),
-              Pattern(Vector(Element(1, 2), Element(2, 4)))
-            )
+              Pattern(Vector(Element(1, 2), Element(2, 4))))
             val notMatching = List[Pattern[Int]](
               Pattern(Vector(Element(6), Element(6))),
-              Pattern(Vector(Element(4, 6), Element(2, 4)))
-            )
+              Pattern(Vector(Element(4, 6), Element(2, 4))))
 
             for (pattern <- matching)
               s"matches $pattern" in withMatcher(options) { matches =>
@@ -293,21 +281,18 @@ class PatternMatcherCompanionSpec extends FreeSpec
               typeSupport,
               windowSize = Some(10),
               minGap = Some(20),
-              maxGap = Some(40)
-            ))
+              maxGap = Some(40)))
 
             val matching = List[Pattern[Int]](
               Pattern(Vector(Element(1, 2), Element(3, 1, 2), Element(2, 4))),
               Pattern(Vector(Element(1, 2), Element(3, 1, 2), Element(2, 4, 6))),
               Pattern(Vector(Element(4, 6), Element(1, 2), Element(2, 4, 6))),
               Pattern(Vector(Element(1), Element(3), Element(3), Element(6))),
-              Pattern(Vector(Element(1, 2), Element(4, 6)))
-            )
+              Pattern(Vector(Element(1, 2), Element(4, 6))))
             val notMatching = List[Pattern[Int]](
               Pattern(Vector(Element(1, 2, 4, 6))),
               Pattern(Vector(Element(1, 2, 4), Element(2, 4))),
-              Pattern(Vector(Element(3), Element(1, 2)))
-            )
+              Pattern(Vector(Element(3), Element(1, 2))))
 
             for (pattern <- matching)
               s"matches $pattern" in withMatcher(options) { matches =>

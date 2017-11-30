@@ -175,7 +175,8 @@ object GSP {
     val maybeOptions = Some(GSPOptions(longTypeSupport, windowSize, minGap, maxGap))
       .filter(_ => windowSize.isDefined || minGap.isDefined || maxGap.isDefined)
 
-    val input = sc.textFile(inputFile, gsp.partitioner.numPartitions)
+    val input = sc.textFile(inputFile)
+      .repartition(gsp.partitioner.numPartitions)
       .filter(_.trim.nonEmpty)
       .flatMap(parseLineIntoTransaction)
 

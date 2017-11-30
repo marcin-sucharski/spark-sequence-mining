@@ -18,7 +18,7 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
   sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
   gspOptions: Option[GSPOptions[TimeType, DurationType]],
   minSupportCount: Long
-)(implicit timeOrdering: Ordering[TimeType]) extends Logging {
+)(implicit timeOrdering: Ordering[TimeType]) extends LoggingUtils {
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
   type SupportCount = Long
@@ -31,7 +31,7 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
         (sequence, PatternMatcher.buildSearchableSequence(sequence)(localOrdering))
       }
       .repartition(partitioner.numPartitions)
-      .persist(StorageLevel.MEMORY_AND_DISK_SER)
+      .cache()
   }
 
   def filter(in: RDD[Pattern[ItemType]]): RDD[(Pattern[ItemType], SupportCount)] = {
@@ -43,13 +43,13 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
     val hashTrees = in mapPartitions { patterns =>
       val empty = HashTree.empty[ItemType, TimeType, DurationType, SequenceId](itemOrderingLocal, timeOrderingLocal)
       ((empty /: patterns) (_ add _) :: Nil).toIterator
-    }
+    } cache()
 
     logger trace {
       val beforeMatching = hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, _)) =>
         hashTree.findPossiblePatterns(gspOptionsLocal, sequence)
       } map (_.toString)
-      s"Candidates before matching: ${beforeMatching.distinct().collect().mkString("\n", "\n", "\n")}"
+      s"Candidates before matching: ${beforeMatching.distinct().toPrettyList}"
     }
 
     val counted = hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, searchable)) =>
@@ -60,7 +60,7 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
 
     logger trace {
       val humanReadable = counted.map(p => s"${p._1} -> ${p._2}")
-      s"Counted candidates in pattern matcher: ${humanReadable.collect().mkString("\n", "\n", "\n")}"
+      s"Counted candidates in pattern matcher: ${humanReadable.toPrettyList}"
     }
 
     counted filter { case (_, support) =>
@@ -75,7 +75,13 @@ private[gsp] object PatternMatcher {
 
   case class SearchableSequence[ItemType, TimeType, SequenceId](
     id: SequenceId,
-    items: Map[ItemType, OrderedItemOccurrenceList[TimeType]]
+    items: Map[ItemType, OrderedItemOccurrenceList[TimeType]],
+
+    // first and last element times are passed as arguments because they require time
+    // ordering for calculation (and SearchableSequence may be serialized later so it
+    // should be as small as possible)
+    firstElementTime: TimeType,
+    lastElementTime: TimeType
   ) {
     assume(items.forall(_._2.nonEmpty))
     assume(items.nonEmpty)
@@ -139,11 +145,15 @@ private[gsp] object PatternMatcher {
         hashMapLocal.updated(item, occurrences :+ transaction.time)
       }
     }
+    val items = groupedNotSorted
+      .mapValues(_.sorted.toIndexedSeq)
+      .map(identity) // https://issues.scala-lang.org/browse/SI-7005
+
     SearchableSequence[ItemType, TimeType, SequenceId](
       sequence.head.sequenceId,
-      groupedNotSorted
-        .mapValues(_.sorted.toIndexedSeq)
-        .map(identity) // https://issues.scala-lang.org/browse/SI-7005
+      items,
+      items.values.minBy(_.head).head,
+      items.values.maxBy(_.last).last
     )
   }
 
@@ -165,9 +175,6 @@ private[gsp] object PatternMatcher {
     case class PatternExtendBacktrace(minTime: MinTime[TimeType]) extends PatternExtendResult
     case object PatternExtendFailure extends PatternExtendResult
 
-    val firstElementTime = seq.items.view.map(_._2.head).min
-    val lastElementTime = seq.items.view.map(_._2.last).max
-
     val elementFinder: ElementFinder[ItemType, TimeType] = gspOptions collect {
       case GSPOptions(typeSupport, Some(windowSize), _, _) =>
         import typeSupport.durationOrdering
@@ -183,13 +190,13 @@ private[gsp] object PatternMatcher {
     val applyMaxGap: TimeType => TimeType = gspOptions collect {
       case GSPOptions(typeSupport, _, _, Some(maxGap)) =>
         typeSupport.timeAdd(_: TimeType, maxGap)
-    } getOrElse (_ => lastElementTime)
+    } getOrElse (_ => seq.lastElementTime)
 
     // returns minimum time of previous element
     val applyMaxGapBack: TimeType => TimeType = gspOptions collect {
       case GSPOptions(typeSupport, _, _, Some(maxGap)) =>
         typeSupport.timeSubtract(_: TimeType, maxGap)
-    } getOrElse (_ => firstElementTime)
+    } getOrElse (_ => seq.firstElementTime)
 
     def extend(minTime: MinTime[TimeType], maxTime: TimeType, rest: Pattern[ItemType]): PatternExtendResult =
       if (rest.elements.isEmpty) PatternExtendSuccess
@@ -210,7 +217,7 @@ private[gsp] object PatternMatcher {
         }
       }
 
-    extend(MinTime(firstElementTime, inclusive = true), lastElementTime, pattern) match {
+    extend(MinTime(seq.firstElementTime, inclusive = true), seq.lastElementTime, pattern) match {
       case PatternExtendSuccess => true
       case _                    => false
     }
