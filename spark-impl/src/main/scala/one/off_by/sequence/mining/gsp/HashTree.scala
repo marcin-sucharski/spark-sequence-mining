@@ -70,11 +70,14 @@ private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, Dur
   protected[gsp] override def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
     sequence: Iterable[(TimeType, ItemType)]): Iterable[PatternType] = {
-    def sequencesWithTail[T](in: Iterable[T]): List[(T, List[T])] =
+    def sequencesWithTail[T](in: Iterable[T]): Stream[(T, List[T])] = {
       in match {
-        case x :: Nil  => (x, Nil) :: Nil
-        case x :: rest => (x, rest) :: sequencesWithTail(rest)
+        case x :: Nil  => Stream((x, Nil))
+        case x :: rest =>
+          lazy val next = sequencesWithTail(rest)
+          (x, rest) #:: next
       }
+    }
 
     if (depth == 0) {
       sequencesWithTail(sequence) flatMap { case (item, rest) =>
