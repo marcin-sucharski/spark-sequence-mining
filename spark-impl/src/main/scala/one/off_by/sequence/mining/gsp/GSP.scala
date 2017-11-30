@@ -2,13 +2,14 @@ package one.off_by.sequence.mining.gsp
 
 import grizzled.slf4j.Logging
 import one.off_by.sequence.mining.gsp.Domain.{Support, SupportCount}
-import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItemExistingElement, JoinItemNewElement, PrefixResult, SuffixResult}
+import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItem, JoinItemExistingElement, JoinItemNewElement, PrefixResult, PrefixSuffixResult, SuffixResult}
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.api.java.StorageLevels
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
+import scala.collection.mutable
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
@@ -141,25 +142,58 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 }
 
 object GSP {
+  implicit class SparkConfHelper(conf: SparkConf) {
+    def registerGSPKryoClasses(): SparkConf =
+      conf.registerKryoClasses(Array(
+        classOf[Transaction[_, _, _]],
+        classOf[Array[Transaction[_, _, _]]],
+        classOf[Taxonomy[_]],
+        classOf[Array[Taxonomy[_]]],
+        classOf[Element[_]],
+        classOf[Array[Element[_]]],
+        classOf[Pattern[_]],
+        classOf[Array[Pattern[_]]],
+        classOf[JoinItem[_]],
+        classOf[Array[JoinItem[_]]],
+        classOf[JoinItemNewElement[_]],
+        classOf[Array[JoinItemNewElement[_]]],
+        classOf[JoinItemExistingElement[_]],
+        classOf[Array[JoinItemExistingElement[_]]],
+        classOf[PrefixSuffixResult[_]],
+        classOf[Array[PrefixSuffixResult[_]]],
+        classOf[PrefixResult[_]],
+        classOf[Array[PrefixResult[_]]],
+        classOf[SuffixResult[_]],
+        classOf[Array[SuffixResult[_]]],
+        classOf[SearchableSequence[_, _, _]],
+        classOf[Array[SearchableSequence[_, _, _]]],
+        classOf[HashTree[_, _, _, _]],
+        classOf[Array[HashTree[_, _, _, _]]],
+        classOf[HashTreeLeaf[_, _, _, _]],
+        classOf[Array[HashTreeLeaf[_, _, _, _]]],
+        classOf[HashTreeNode[_, _, _, _]],
+        classOf[Array[HashTreeNode[_, _, _, _]]]
+      ))
+
+    def registerMissingSparkClasses(): SparkConf =
+      conf.registerKryoClasses(Array(
+        Class.forName("scala.reflect.ClassTag$$anon$1"),
+        classOf[Class[_]],
+        classOf[mutable.WrappedArray.ofRef[_]]
+      ))
+  }
+}
+
+object GSPMain {
+  import GSP.SparkConfHelper
+
   def main(args: Array[String]): Unit = {
     val conf: SparkConf = new SparkConf()
       .setAppName("GSP")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .registerKryoClasses(Array(
-        classOf[Transaction[_, _, _]],
-        classOf[Taxonomy[_]],
-        classOf[Element[_]],
-        classOf[Pattern[_]],
-        classOf[Array[Pattern[_]]],
-        classOf[JoinItemNewElement[_]],
-        classOf[JoinItemExistingElement[_]],
-        classOf[PrefixResult[_]],
-        classOf[SuffixResult[_]],
-        classOf[SearchableSequence[_, _, _]],
-        classOf[HashTree[_, _, _, _]],
-        classOf[HashTreeLeaf[_, _, _, _]],
-        classOf[HashTreeNode[_, _, _, _]]
-      ))
+      .set("spark.kryo.registrationRequired", "true")
+      .registerGSPKryoClasses()
+      .registerMissingSparkClasses()
     val sc: SparkContext = new SparkContext(conf)
     sc.setLogLevel("WARN")
 

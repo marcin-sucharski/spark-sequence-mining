@@ -11,10 +11,16 @@ trait SparkTestBase extends BeforeAndAfter {
   private var sparkContext: SparkContext = _
 
   before {
+    import one.off_by.sequence.mining.gsp.GSP.SparkConfHelper
+
     val conf: SparkConf = new SparkConf()
       .setAppName("GSP")
       .set("spark.driver.host", "localhost")
       .set("spark.default.parallelism", "2")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .set("spark.kryo.registrationRequired", "true")
+      .registerGSPKryoClasses()
+      .registerMissingSparkClasses()
       .setMaster("local[*]")
     sparkContext = new SparkContext(conf)
   }
