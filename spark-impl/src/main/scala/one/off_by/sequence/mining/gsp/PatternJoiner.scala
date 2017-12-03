@@ -12,7 +12,7 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
 
   def generateCandidates(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {
     logger.trace(s"Generating candidates from: ${patterns.collect().mkString("\n", "\n", "\n")}")
-    pruneMatches(joinPatterns(patterns), patterns).persist(StorageLevel.MEMORY_AND_DISK_SER)
+    pruneMatches(joinPatterns(patterns), patterns)
   }
 
   private[gsp] def joinPatterns(patterns: RDD[Pattern[ItemType]]): RDD[Pattern[ItemType]] = {

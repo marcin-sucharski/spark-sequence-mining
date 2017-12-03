@@ -9,6 +9,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
+import scala.collection.immutable.HashMap
 import scala.collection.mutable
 import scala.language.postfixOps
 import scala.reflect.ClassTag
@@ -33,7 +34,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   implicit
   timeOrdering: Ordering[TimeType],
   itemOrdering: Ordering[ItemType]
-) extends Logging {
+) extends LoggingUtils {
 
   import Domain.{Percent, Support, SupportCount}
 
@@ -59,7 +60,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val sequences: RDD[(SequenceId, TransactionType)] = transactions
       .map(t => (t.sequenceId, t))
       .partitionBy(partitioner)
-      .persist(StorageLevel.MEMORY_ONLY_SER)
+      .cache()
 
     val sequenceCount = sequences.keys.distinct.count()
     val minSupportCount = (sequenceCount * minSupport).toLong
@@ -68,15 +69,15 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val patternMatcher = new PatternMatcher(sc, partitioner, sequences, maybeOptions, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
-      .persist(StorageLevels.MEMORY_AND_DISK_SER)
+      .cache()
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
     val result = Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
       val newLength = prevLength + 1
       logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))
-      logger.trace(s"Candidates: ${candidates.map(_.toString).collect().mkString("\n", "\n", "\n")}")
+      logger.trace(s"Candidates: ${candidates.map(_.toString).toPrettyList}")
       val phaseResult = patternMatcher.filter(candidates)
-        .persist(StorageLevels.MEMORY_AND_DISK_SER)
+        .persist(StorageLevels.MEMORY_AND_DISK)
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
     } takeWhile (!_.lastPattern.isEmpty()) lastOption
@@ -179,7 +180,9 @@ object GSP {
       conf.registerKryoClasses(Array(
         Class.forName("scala.reflect.ClassTag$$anon$1"),
         classOf[Class[_]],
-        classOf[mutable.WrappedArray.ofRef[_]]
+        classOf[mutable.WrappedArray.ofRef[_]],
+        Ordering.Int.getClass,
+        Ordering.String.getClass
       ))
   }
 }

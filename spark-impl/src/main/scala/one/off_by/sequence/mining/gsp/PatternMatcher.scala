@@ -2,6 +2,7 @@ package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{Partitioner, SparkContext}
 
 import scala.annotation.tailrec
@@ -50,7 +51,7 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
       s"Candidates before matching: ${beforeMatching.distinct().toPrettyList}"
     }
 
-    val counted = hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, searchable)) =>
+    val counted = searchableSequences cartesian hashTrees flatMap { case ((sequence, searchable), hashTree) =>
       hashTree.findPossiblePatterns(gspOptionsLocal, sequence) filter { pattern =>
         PatternMatcher.matches(pattern, searchable, gspOptionsLocal)(timeOrderingLocal)
       } map (p => (p, 1L))

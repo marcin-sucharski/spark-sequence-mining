@@ -12,7 +12,7 @@ private[gsp] sealed trait HashTree[ItemType, TimeType, DurationType, SequenceId]
 
   def findPossiblePatterns(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    sequence: Iterable[TransactionType]): Iterable[PatternType]
+    sequence: Iterable[TransactionType]): Iterator[PatternType]
 
   protected[gsp] def addInternal(
     pattern: PatternType,
@@ -21,7 +21,7 @@ private[gsp] sealed trait HashTree[ItemType, TimeType, DurationType, SequenceId]
 
   protected[gsp] def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    sequence: Iterable[(TimeType, ItemType)]): Iterable[PatternType]
+    sequence: List[(TimeType, ItemType)]): Iterator[PatternType]
 }
 
 private[gsp] object HashTree {
@@ -32,7 +32,7 @@ private[gsp] object HashTree {
 
 private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, DurationType, SequenceId](
   depth: Int,
-  children: HashMap[Int, HashTree[ItemType, TimeType, DurationType, SequenceId]]
+  children: Map[Int, HashTree[ItemType, TimeType, DurationType, SequenceId]]
 ) extends HashTree[ItemType, TimeType, DurationType, SequenceId] {
 
   import HashTreeUtils._
@@ -42,13 +42,13 @@ private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, Dur
 
   override def findPossiblePatterns(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    sequence: Iterable[TransactionType]): Iterable[PatternType] = {
+    sequence: Iterable[TransactionType]): Iterator[PatternType] = {
     assume {
       val times = sequence.map(_.time).toVector
       times.sorted == times
     }
 
-    findPossiblePatternsInternal(gspOptions, sequence.flatMap(t => t.items.toList.sorted.map(x => (t.time, x))))
+    findPossiblePatternsInternal(gspOptions, sequence.toList.flatMap(t => t.items.toList.sorted.map(x => (t.time, x))))
   }
 
   protected[gsp] override def addInternal(
@@ -63,52 +63,53 @@ private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, Dur
       case None =>
         copy(children = children.updated(
           hash,
-          HashTree.empty[ItemType, TimeType, DurationType, SequenceId].addInternal(pattern, iterable)))
+          HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](depth + 1, Vector(pattern))))
     }
   }
 
   protected[gsp] override def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    sequence: Iterable[(TimeType, ItemType)]): Iterable[PatternType] = {
-    def sequencesWithTail[T](in: Iterable[T]): Stream[(T, List[T])] = {
-      in match {
-        case x :: Nil  => Stream((x, Nil))
-        case x :: rest =>
-          lazy val next = sequencesWithTail(rest)
-          (x, rest) #:: next
-      }
-    }
-
-    if (depth == 0) {
-      sequencesWithTail(sequence) flatMap { case (item, rest) =>
-        children.get(item._2.hashCode()) match {
-          case Some(node) => node.findPossiblePatternsInternal(gspOptions, item :: rest)
-          case None       => Nil
-        }
-      }
+    sequence: List[(TimeType, ItemType)]): Iterator[PatternType] = {
+    (if (depth == 0) {
+      new ItemWithTailIterator(sequence)
     } else {
-      val first :: inputSequences = sequence
+      val (first, inputSequences) = (sequence.head, sequence.tail)
+      val filterFunction = gapFilterFunction(gspOptions, first._1)
 
-      sequencesWithTail(inputSequences) filter { case (item, _) =>
-        gspOptions.fold(true) { options =>
-          val typeSupport = options.typeSupport
-
-          val filterMinGap = options.minGap.fold(true) { minGap =>
-            implicitly[Ordering[TimeType]].gteq(item._1, typeSupport.timeAdd(first._1, minGap))
-          }
-          val filterMaxGap = options.maxGap.fold(true) { maxGap =>
-            implicitly[Ordering[TimeType]].lteq(item._1, typeSupport.timeAdd(first._1, maxGap))
-          }
-
-          filterMaxGap && filterMinGap
-        }
-      } flatMap { case (item, rest) =>
-        children.get(item.hashCode()) match {
-          case Some(node) => node.findPossiblePatternsInternal(gspOptions, item :: rest)
-          case None       => Nil
-        }
+      new ItemWithTailIterator(inputSequences) filter { case (item, _) =>
+        filterFunction(item._1)
+      }
+    }) flatMap { case (item, rest) =>
+      children.get(getHash(item._2)) match {
+        case Some(node) => node.findPossiblePatternsInternal(gspOptions, item :: rest)
+        case None       => Nil
       }
     }
+  }
+
+  private def gapFilterFunction(
+    gspOptions: Option[GSPOptions[TimeType, DurationType]], first: TimeType
+  ): (TimeType) => Boolean = gspOptions.fold((_: TimeType) => true) { options =>
+    val typeSupport = options.typeSupport
+
+    def filterMinGap(item: TimeType) = options.minGap.fold(true) { minGap =>
+      implicitly[Ordering[TimeType]].gteq(item, typeSupport.timeAdd(first, minGap))
+    }
+    def filterMaxGap(item: TimeType) = options.maxGap.fold(true) { maxGap =>
+      implicitly[Ordering[TimeType]].lteq(item, typeSupport.timeAdd(first, maxGap))
+    }
+
+    (item: TimeType) => filterMinGap(item) && filterMaxGap(item)
+  }
+}
+
+private class ItemWithTailIterator[T](private var current: List[T]) extends Iterator[(T, List[T])] {
+  override def hasNext: Boolean = current.nonEmpty
+
+  override def next(): (T, List[T]) = {
+    val result = (current.head, current.tail)
+    current = current.tail
+    result
   }
 }
 
@@ -131,7 +132,7 @@ private[gsp] case class HashTreeLeaf[ItemType: Ordering, TimeType: Ordering, Dur
 
   override def findPossiblePatterns(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    sequence: Iterable[TransactionType]): Iterable[PatternType] = items
+    sequence: Iterable[TransactionType]): Iterator[PatternType] = items.iterator
 
   protected[gsp] override def addInternal(
     pattern: PatternType,
@@ -140,7 +141,7 @@ private[gsp] case class HashTreeLeaf[ItemType: Ordering, TimeType: Ordering, Dur
 
   protected[gsp] override def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    sequence: Iterable[(TimeType, ItemType)]): Iterable[PatternType] = items
+    sequence: List[(TimeType, ItemType)]): Iterator[PatternType] = items.iterator
 }
 
 private object HashTreeUtils {
