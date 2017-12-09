@@ -6,7 +6,7 @@ class HashTreeSpec extends FreeSpec
   with Matchers {
 
   "HashTree should" - {
-    val empty = HashTree.empty[Int, Int, Int, Int]
+    val empty: HashTree[Int, Int, Int, Int] = HashTreeLeaf[Int, Int, Int, Int]()
     val typeSupport = GSPTypeSupport[Int, Int](
       (a, b) => b - a,
       (a, b) => a - b,
@@ -99,7 +99,7 @@ class HashTreeSpec extends FreeSpec
           Transaction(1, 30, Set(3)),
           Transaction(1, 40, Set(4)))
 
-        val hashTree = (HashTree.empty[Int, Int, Int, Int] /: patterns)(_ add _)
+        val hashTree = (empty /: patterns)(_ add _)
 
         hashTree.findPossiblePatterns(None, sequence).toList should contain allOf(
           Pattern(Vector(Element(1), Element(2))),

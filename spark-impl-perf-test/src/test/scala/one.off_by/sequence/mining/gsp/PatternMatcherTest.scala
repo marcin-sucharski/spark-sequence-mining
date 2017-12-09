@@ -3,8 +3,7 @@ package one.off_by.sequence.mining.gsp
 import org.scalameter.api._
 import org.scalameter.picklers.Implicits._
 
-class PatternMatcherBenchmark extends Bench.ForkedTime {
-
+class PatternMatcherBenchmark extends Bench.LocalTime {
   performance of "PatternMatcher" in {
     import one.off_by.sequence.mining.gsp.PatternMatcherTest.options
     import PatternMatcherTest.{genericSequence, longSequence}
@@ -130,11 +129,11 @@ private object PatternMatcherTest {
       }
 
     val patterns: Gen[IndexedSeq[Pattern[Int]]] = {
-      val thousand = 1000
+      val hundred = 100
 
-      val start = 1 * thousand
-      val stop = 10 * thousand
-      val step = 3 * thousand
+      val start = 1 * hundred
+      val stop = 10 * hundred
+      val step = 3 * hundred
 
       Gen.range("size")(start, stop, step) map { size =>
         infinitePatterns.take(size).toIndexedSeq

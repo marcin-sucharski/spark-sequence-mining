@@ -1,6 +1,6 @@
 package one.off_by.sequence.mining.gsp
 
-case class Transaction[ItemType, TimeType, SequenceId](
+case class Transaction[ItemType, @specialized(Int, Long, Float, Double) TimeType, SequenceId](
   sequenceId: SequenceId,
   time: TimeType,
   items: Set[ItemType]

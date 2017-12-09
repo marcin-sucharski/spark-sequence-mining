@@ -1,34 +1,39 @@
 package one.off_by.sequence.mining.gsp
 
-import grizzled.slf4j.Logging
-import one.off_by.sequence.mining.gsp.Domain.{Support, SupportCount}
+import one.off_by.sequence.mining.gsp.Domain.SupportCount
 import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItem, JoinItemExistingElement, JoinItemNewElement, PrefixResult, PrefixSuffixResult, SuffixResult}
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.api.java.StorageLevels
 import org.apache.spark.rdd.RDD
-import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
 
-import scala.collection.immutable.HashMap
 import scala.collection.mutable
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
-case class GSPOptions[TimeType, DurationType](
+case class GSPOptions[
+@specialized(Int, Long, Float, Double) TimeType,
+@specialized(Int, Long, Float, Double) DurationType](
   typeSupport: GSPTypeSupport[TimeType, DurationType],
   windowSize: Option[DurationType] = None,
   minGap: Option[DurationType] = None,
   maxGap: Option[DurationType] = None
 )
 
-case class GSPTypeSupport[TimeType, DurationType](
+case class GSPTypeSupport[
+@specialized(Int, Long, Float, Double) TimeType,
+@specialized(Int, Long, Float, Double) DurationType](
   timeDistance: (TimeType, TimeType) => DurationType,
   timeSubtract: (TimeType, DurationType) => TimeType,
   timeAdd: (TimeType, DurationType) => TimeType
 )(implicit val durationOrdering: Ordering[DurationType])
 
-class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
+class GSP[
+ItemType: ClassTag,
+@specialized(Int, Long, Float, Double) DurationType,
+@specialized(Int, Long, Float, Double) TimeType,
+SequenceId: ClassTag](
   sc: SparkContext
 )(
   implicit
@@ -36,7 +41,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
   itemOrdering: Ordering[ItemType]
 ) extends LoggingUtils {
 
-  import Domain.{Percent, Support, SupportCount}
+  import Domain.{Percent, SupportCount}
 
   type TaxonomyType = Taxonomy[ItemType]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
@@ -66,7 +71,7 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
     val minSupportCount = (sequenceCount * minSupport).toLong
     logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount.")
 
-    val patternMatcher = new PatternMatcher(sc, partitioner, sequences, maybeOptions, minSupportCount)
+    val patternMatcher = createPatternMatcher(maybeOptions, sequences, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
       .cache()
@@ -84,6 +89,14 @@ class GSP[ItemType: ClassTag, DurationType, TimeType, SequenceId: ClassTag](
 
     result.map(_.result).getOrElse(sc.parallelize(Nil))
   }
+
+  // Creation of PatternMatcher is extracted into separated method thus is can be specialized
+  private def createPatternMatcher(
+    maybeOptions: Option[GSPOptions[TimeType, DurationType]],
+    sequences: RDD[(SequenceId, TransactionType)],
+    minSupportCount: SupportCount): PatternMatcher[ItemType, TimeType, DurationType, SequenceId] =
+    new PatternMatcher[ItemType, TimeType, DurationType, SequenceId](
+      sc, partitioner, sequences, maybeOptions, minSupportCount)
 
   private case class State(
     result: RDD[(Pattern[ItemType], SupportCount)],
@@ -147,7 +160,15 @@ object GSP {
     def registerGSPKryoClasses(): SparkConf =
       conf.registerKryoClasses(Array(
         classOf[Transaction[_, _, _]],
+        classOf[one.off_by.sequence.mining.gsp.Transaction$mcI$sp],
+        classOf[one.off_by.sequence.mining.gsp.Transaction$mcJ$sp],
+        classOf[one.off_by.sequence.mining.gsp.Transaction$mcF$sp],
+        classOf[one.off_by.sequence.mining.gsp.Transaction$mcD$sp],
         classOf[Array[Transaction[_, _, _]]],
+        classOf[Array[one.off_by.sequence.mining.gsp.Transaction$mcI$sp]],
+        classOf[Array[one.off_by.sequence.mining.gsp.Transaction$mcJ$sp]],
+        classOf[Array[one.off_by.sequence.mining.gsp.Transaction$mcF$sp]],
+        classOf[Array[one.off_by.sequence.mining.gsp.Transaction$mcD$sp]],
         classOf[Taxonomy[_]],
         classOf[Array[Taxonomy[_]]],
         classOf[Element[_]],

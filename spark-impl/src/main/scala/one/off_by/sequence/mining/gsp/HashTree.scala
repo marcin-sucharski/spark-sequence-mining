@@ -3,7 +3,11 @@ package one.off_by.sequence.mining.gsp
 import scala.collection.immutable.HashMap
 import scala.language.postfixOps
 
-private[gsp] sealed trait HashTree[ItemType, TimeType, DurationType, SequenceId] {
+private[gsp] sealed trait HashTree[
+ItemType,
+@specialized(Int, Long, Float, Double) TimeType,
+@specialized(Int, Long, Float, Double) DurationType,
+SequenceId] {
   type SelfType = HashTree[ItemType, TimeType, DurationType, SequenceId]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
   type PatternType = Pattern[ItemType]
@@ -24,20 +28,18 @@ private[gsp] sealed trait HashTree[ItemType, TimeType, DurationType, SequenceId]
     sequence: List[(TimeType, ItemType)]): Iterator[PatternType]
 }
 
-private[gsp] object HashTree {
-  def empty[ItemType: Ordering, TimeType: Ordering, DurationType, SequenceId]
-  : HashTree[ItemType, TimeType, DurationType, SequenceId] =
-    HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](0, Vector())
-}
-
-private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, DurationType, SequenceId](
+private[gsp] case class HashTreeNode[
+ItemType: Ordering,
+@specialized(Int, Long, Float, Double) TimeType: Ordering,
+@specialized(Int, Long, Float, Double) DurationType,
+SequenceId](
   depth: Int,
   children: Map[Int, HashTree[ItemType, TimeType, DurationType, SequenceId]]
 ) extends HashTree[ItemType, TimeType, DurationType, SequenceId] {
 
   import HashTreeUtils._
 
-  override def add(pattern: PatternType): SelfType =
+  override def add(pattern: PatternType): HashTree[ItemType, TimeType, DurationType, SequenceId] =
     addInternal(pattern, pattern.elements.flatMap(_.items.toList.sorted))
 
   override def findPossiblePatterns(
@@ -48,22 +50,29 @@ private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, Dur
       times.sorted == times
     }
 
-    findPossiblePatternsInternal(gspOptions, sequence.toList.flatMap(t => t.items.toList.sorted.map(x => (t.time, x))))
+    val inputSequence = sequence.toList.flatMap(t => t.items.toList.sorted.map(x => (t.time, x)))
+    findPossiblePatternsInternal(gspOptions, inputSequence)
+      .toSet
+      .iterator
   }
 
   protected[gsp] override def addInternal(
     pattern: PatternType,
     iterable: Iterable[ItemType]
-  ): SelfType = {
+  ): HashTree[ItemType, TimeType, DurationType, SequenceId] = {
     val hash = getHash(iterable.head)
     children.get(hash) match {
       case Some(node) =>
-        copy(children = children.updated(hash, node.addInternal(pattern, iterable.tail)))
+        HashTreeNode[ItemType, TimeType, DurationType, SequenceId](
+          depth = depth,
+          children = children.updated(hash, node.addInternal(pattern, iterable.tail)))
 
       case None =>
-        copy(children = children.updated(
-          hash,
-          HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](depth + 1, Vector(pattern))))
+        HashTreeNode[ItemType, TimeType, DurationType, SequenceId](
+          depth = depth,
+          children = children.updated(
+            hash,
+            HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](depth + 1, Vector(pattern))))
     }
   }
 
@@ -74,33 +83,44 @@ private[gsp] case class HashTreeNode[ItemType: Ordering, TimeType: Ordering, Dur
       new ItemWithTailIterator(sequence)
     } else {
       val (first, inputSequences) = (sequence.head, sequence.tail)
-      val filterFunction = gapFilterFunction(gspOptions, first._1)
 
       new ItemWithTailIterator(inputSequences) filter { case (item, _) =>
-        filterFunction(item._1)
+        gapFilterFunction(gspOptions, first._1, item._1)
       }
     }) flatMap { case (item, rest) =>
-      children.get(getHash(item._2)) match {
-        case Some(node) => node.findPossiblePatternsInternal(gspOptions, item :: rest)
-        case None       => Nil
+      children.get(getHash(item._2)).fold(Iterator.empty: Iterator[PatternType]) { node =>
+        node.findPossiblePatternsInternal(gspOptions, item :: rest)
       }
     }
   }
 
   private def gapFilterFunction(
-    gspOptions: Option[GSPOptions[TimeType, DurationType]], first: TimeType
-  ): (TimeType) => Boolean = gspOptions.fold((_: TimeType) => true) { options =>
+    gspOptions: Option[GSPOptions[TimeType, DurationType]],
+    first: TimeType,
+    item: TimeType
+  ): Boolean = gspOptions.fold(true) { options =>
     val typeSupport = options.typeSupport
 
-    def filterMinGap(item: TimeType) = options.minGap.fold(true) { minGap =>
-      implicitly[Ordering[TimeType]].gteq(item, typeSupport.timeAdd(first, minGap))
+    options.minGap.fold(true) { minGap =>
+      filterMinGap(item, first, minGap, typeSupport.timeAdd)
+    } && options.maxGap.fold(true) { maxGap =>
+      filterMaxGap(item, first, maxGap, typeSupport.timeAdd)
     }
-    def filterMaxGap(item: TimeType) = options.maxGap.fold(true) { maxGap =>
-      implicitly[Ordering[TimeType]].lteq(item, typeSupport.timeAdd(first, maxGap))
-    }
-
-    (item: TimeType) => filterMinGap(item) && filterMaxGap(item)
   }
+
+  private def filterMinGap(
+    item: TimeType,
+    first: TimeType,
+    minGap: DurationType,
+    timeAdd: (TimeType, DurationType) => TimeType): Boolean =
+    implicitly[Ordering[TimeType]].gteq(item, timeAdd(first, minGap))
+
+  private def filterMaxGap(
+    item: TimeType,
+    first: TimeType,
+    maxGap: DurationType,
+    timeAdd: (TimeType, DurationType) => TimeType): Boolean =
+    implicitly[Ordering[TimeType]].lteq(item, timeAdd(first, maxGap))
 }
 
 private class ItemWithTailIterator[T](private var current: List[T]) extends Iterator[(T, List[T])] {
@@ -113,15 +133,20 @@ private class ItemWithTailIterator[T](private var current: List[T]) extends Iter
   }
 }
 
-private[gsp] case class HashTreeLeaf[ItemType: Ordering, TimeType: Ordering, DurationType, SequenceId](
-  depth: Int,
-  items: Vector[Pattern[ItemType]]
+private[gsp] case class HashTreeLeaf[
+ItemType: Ordering,
+@specialized(Int, Long, Float, Double) TimeType: Ordering,
+@specialized(Int, Long, Float, Double) DurationType,
+SequenceId](
+  depth: Int = 0,
+  items: Vector[Pattern[ItemType]] = Vector()
 ) extends HashTree[ItemType, TimeType, DurationType, SequenceId] {
 
   import HashTreeUtils._
 
-  override def add(pattern: PatternType): SelfType =
-    if (items.length < maxLeafSize || getLength(pattern) == depth) HashTreeLeaf(depth, pattern +: items)
+  override def add(pattern: PatternType): HashTree[ItemType, TimeType, DurationType, SequenceId] =
+    if (items.length < maxLeafSize || getLength(pattern) == depth)
+      HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](depth, pattern +: items)
     else {
       val node: HashTree[ItemType, TimeType, DurationType, SequenceId] =
         HashTreeNode[ItemType, TimeType, DurationType, SequenceId](
@@ -137,7 +162,7 @@ private[gsp] case class HashTreeLeaf[ItemType: Ordering, TimeType: Ordering, Dur
   protected[gsp] override def addInternal(
     pattern: PatternType,
     iterable: Iterable[ItemType]
-  ): SelfType = add(pattern)
+  ): HashTree[ItemType, TimeType, DurationType, SequenceId] = add(pattern)
 
   protected[gsp] override def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],

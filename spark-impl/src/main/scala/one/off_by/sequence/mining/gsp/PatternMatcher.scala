@@ -2,7 +2,6 @@ package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.rdd.RDD
-import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{Partitioner, SparkContext}
 
 import scala.annotation.tailrec
@@ -11,7 +10,11 @@ import scala.collection.immutable.HashMap
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 
-private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, SequenceId: ClassTag](
+private[gsp] class PatternMatcher[
+ItemType: Ordering,
+@specialized(Int, Long, Float, Double) TimeType,
+@specialized(Int, Long, Float, Double) DurationType,
+SequenceId: ClassTag](
   sc: SparkContext,
   partitioner: Partitioner,
   sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
@@ -33,15 +36,17 @@ private[gsp] class PatternMatcher[ItemType: Ordering, TimeType, DurationType, Se
       .cache()
   }
 
+  private def makeEmptyHashTree(): HashTree[ItemType, TimeType, DurationType, SequenceId] =
+    HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId]()(implicitly[Ordering[ItemType]], timeOrdering)
+
   def filter(in: RDD[Pattern[ItemType]]): RDD[(Pattern[ItemType], SupportCount)] = {
-    val itemOrderingLocal = implicitly[Ordering[ItemType]]
     val timeOrderingLocal = timeOrdering
     val minSupportCountLocal = minSupportCount
     val gspOptionsLocal = gspOptions
 
+    val emptyHashTree = makeEmptyHashTree()
     val hashTrees = in mapPartitions { patterns =>
-      val empty = HashTree.empty[ItemType, TimeType, DurationType, SequenceId](itemOrderingLocal, timeOrderingLocal)
-      ((empty /: patterns) (_ add _) :: Nil).toIterator
+      ((emptyHashTree /: patterns) (_ add _) :: Nil).toIterator
     } cache()
 
     logger trace {
