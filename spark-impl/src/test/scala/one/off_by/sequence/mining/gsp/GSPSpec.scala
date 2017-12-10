@@ -55,6 +55,94 @@ class GSPSpec extends WordSpec
         gsp.execute(input, 1.0).collect().map(_._1) should contain (
           Pattern(Vector(Element(1), Element(2), Element(3), Element(4))))
       }
+
+      "works for sequence with additional noise data" in {
+        val pattern = Pattern(Vector(
+          Element(989, 1289),
+          Element(548, 1122),
+          Element(1498, 306, 808, 1881, 3025),
+          Element(960, 1670),
+          Element(901)))
+
+        val transactions = List[Transaction[Int, Int, Int]](
+          Transaction(1, 1, Set(989, 1289)),
+          Transaction(1, 2, Set(548, 1122)),
+          Transaction(1, 3, Set(511, 1549, 409)),
+          Transaction(1, 4, Set(1498, 306, 808, 1881, 3025)),
+          Transaction(1, 5, Set(960, 1670)),
+          Transaction(1, 6, Set(901)),
+
+          Transaction(2, 1, Set(459)),
+          Transaction(2, 2, Set(338, 1294, 275)),
+          Transaction(2, 3, Set(58, 1049, 2638, 866)),
+          Transaction(2, 4, Set(927, 1396, 2682, 1106)),
+
+          Transaction(3, 1, Set(989, 1289)),
+          Transaction(3, 2, Set(548, 1122)),
+          Transaction(3, 4, Set(1498, 306, 808, 1881, 3025)),
+          Transaction(3, 5, Set(960, 1670)),
+          Transaction(3, 6, Set(408, 1359, 164, 1920, 888, 2097, 2406)),
+          Transaction(3, 7, Set(901)),
+          Transaction(3, 9, Set(81, 1222)),
+
+          Transaction(4, 1, Set(821)),
+          Transaction(4, 2, Set(412)),
+          Transaction(4, 3, Set(785, 1433, 663, 1794)),
+          Transaction(4, 4, Set(396, 764, 2506, 2688, 1670)),
+
+          Transaction(5, 1, Set(989, 1289)),
+          Transaction(5, 2, Set(354, 1619)),
+          Transaction(5, 3, Set(548, 1122)),
+          Transaction(5, 4, Set(1498, 306, 808, 1881, 3025)),
+          Transaction(5, 5, Set(960, 1670)),
+          Transaction(5, 6, Set(901)))
+
+        val gsp = new GSP[Int, Int, Int, Int](sc)
+        val input = sc.parallelize(transactions)
+
+        val patterns = gsp.execute(input, 0.4).collect().map(_._1)
+
+        List(
+          Pattern(Vector(Element(989))),
+          Pattern(Vector(Element(1289))),
+          Pattern(Vector(Element(548))),
+          Pattern(Vector(Element(1122))),
+          Pattern(Vector(Element(1498))),
+          Pattern(Vector(Element(306))),
+          Pattern(Vector(Element(808))),
+          Pattern(Vector(Element(1881))),
+          Pattern(Vector(Element(3025))),
+          Pattern(Vector(Element(960))),
+          Pattern(Vector(Element(1670))),
+          Pattern(Vector(Element(901))),
+
+          Pattern(Vector(Element(989, 1289))),
+          Pattern(Vector(Element(548, 1122))),
+          Pattern(Vector(Element(1498, 306))),
+          Pattern(Vector(Element(306, 808))),
+          Pattern(Vector(Element(808, 1881))),
+          Pattern(Vector(Element(1881, 3025))),
+          Pattern(Vector(Element(960, 1670))),
+
+          Pattern(Vector(Element(989), Element(548))),
+          Pattern(Vector(Element(1289), Element(548))),
+          Pattern(Vector(Element(989), Element(1122))),
+
+          Pattern(Vector(Element(989, 1289), Element(548))),
+          Pattern(Vector(Element(989), Element(548, 1122))),
+          Pattern(Vector(Element(1289), Element(548, 1122))),
+          Pattern(Vector(Element(989, 1289), Element(1122))),
+
+          Pattern(Vector(Element(989, 1289), Element(548, 1122))),
+
+          Pattern(Vector(Element(1498, 306, 808, 1881, 3025))),
+
+
+          pattern
+        ) foreach { p =>
+          patterns should contain (p)
+        }
+      }
     }
 
     "have prepareInitialPatterns method" which {

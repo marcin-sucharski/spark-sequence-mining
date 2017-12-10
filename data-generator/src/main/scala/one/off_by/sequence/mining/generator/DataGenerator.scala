@@ -31,9 +31,11 @@ object DataGenerator {
   }
 
   def main(args: Array[String]): Unit = {
-    val arguments = getArgs(args)
+    val arguments = getArgs(args.toList)
     val frequentSequenceCount = (arguments.sequenceCount * arguments.frequentSequenceApproxSupport / 100.0).toInt
     val pattern = genPattern(arguments)
+
+    println(pattern)
 
     def writeSequence(seq: Seq[Transaction[Int, Int, Int]]): Unit = {
       val seqId = seq.head.sequenceId

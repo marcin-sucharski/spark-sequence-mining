@@ -33,6 +33,18 @@ lazy val sparkImpl = (project in file("spark-impl"))
     }
   ))
 
+lazy val sparkImplRunner = (project in file("spark-impl-runner"))
+  .dependsOn(sparkImpl)
+  .settings(commonSettings ++ Seq(
+    libraryDependencies ++= Seq(
+      "org.apache.spark" %% "spark-core" % "2.2.0" % "provided"
+    ),
+    assemblyMergeStrategy in assembly := {
+      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+      case _ => MergeStrategy.first
+    }
+  ))
+
 lazy val sparkImplPerfTest = (project in file("spark-impl-perf-test"))
   .dependsOn(sparkImpl)
   .settings(commonSettings ++ Seq(
@@ -43,3 +55,5 @@ lazy val sparkImplPerfTest = (project in file("spark-impl-perf-test"))
     parallelExecution in Test := false,
     testFrameworks += new TestFramework("org.scalameter.ScalaMeterFramework"),
     logBuffered := false))
+
+(assembly in sparkImplRunner) := ((assembly in sparkImplRunner) dependsOn (assembly in sparkImpl)).value
