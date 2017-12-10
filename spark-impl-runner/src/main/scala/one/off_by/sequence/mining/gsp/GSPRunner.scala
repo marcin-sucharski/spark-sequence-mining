@@ -40,8 +40,7 @@ object GSPRunner {
       .map(mapResultToString)
       .saveAsTextFile(outputFile)
 
-    Console.println("Press any key to finish")
-    Console.in.readLine()
+    println("Finished")
   }
 
   private def parseLineIntoTransaction(line: String): Seq[Transaction[Int, Int, Int]] =
