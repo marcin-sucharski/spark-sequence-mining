@@ -45,7 +45,7 @@ SequenceId: ClassTag](
     val gspOptionsLocal = gspOptions
 
     val emptyHashTree = makeEmptyHashTree()
-    val hashTrees = in.coalesce(1) mapPartitions { patterns =>
+    val hashTrees = in mapPartitions { patterns =>
       ((emptyHashTree /: patterns) (_ add _) :: Nil).toIterator
     } cache()
 
