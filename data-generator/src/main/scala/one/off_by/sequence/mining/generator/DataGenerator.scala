@@ -75,7 +75,7 @@ object DataGenerator {
   }
 
   def genPattern(args: Arguments): Pattern[Int] = {
-    Pattern(0 until args.sequenceCount map { _ => genElement } toVector)
+    Pattern(0 until args.frequentSequenceElementCount map { _ => genElement } toVector)
   }
 
   def genElement: Element[Int] = {
