@@ -12,7 +12,6 @@ object GSPRunner {
     val conf: SparkConf = new SparkConf()
       .setAppName("GSP")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .set("spark.kryo.registrationRequired", "true")
       .registerGSPKryoClasses()
       .registerMissingSparkClasses()
     val sc: SparkContext = new SparkContext(conf)
