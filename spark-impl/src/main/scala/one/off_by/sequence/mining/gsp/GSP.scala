@@ -1,16 +1,11 @@
 package one.off_by.sequence.mining.gsp
 
-import one.off_by.sequence.mining.gsp.Domain.SupportCount
-import one.off_by.sequence.mining.gsp.PatternJoiner.{JoinItem, JoinItemExistingElement, JoinItemNewElement, PrefixResult, PrefixSuffixResult, SuffixResult}
-import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import org.apache.spark.api.java.StorageLevels
 import org.apache.spark.rdd.RDD
-import org.apache.spark.{HashPartitioner, Partitioner, SparkConf, SparkContext}
+import org.apache.spark.{HashPartitioner, Partitioner, SparkContext}
 
-import scala.collection.mutable
 import scala.language.postfixOps
 import scala.reflect.ClassTag
-import scala.util.control.NonFatal
 
 case class GSPOptions[
 @specialized(Int, Long, Float, Double) TimeType,
