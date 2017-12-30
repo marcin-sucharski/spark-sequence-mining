@@ -85,7 +85,7 @@ SequenceId: ClassTag](
     result.map(_.result).getOrElse(sc.parallelize(Nil))
   }
 
-  // Creation of PatternMatcher is extracted into separated method thus is can be specialized
+  // Creation of PatternMatcher is extracted into separated method thus it can be specialized
   private def createPatternMatcher(
     maybeOptions: Option[GSPOptions[TimeType, DurationType]],
     sequences: RDD[(SequenceId, TransactionType)],
