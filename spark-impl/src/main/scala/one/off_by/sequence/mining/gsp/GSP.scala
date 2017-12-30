@@ -112,40 +112,4 @@ SequenceId: ClassTag](
       .reduceByKey(_ + _)
       .filter(_._2 >= minSupportCount)
   }
-
-  private[gsp] def prepareTaxonomies(
-    taxonomies: RDD[TaxonomyType]
-  ): RDD[(ItemType, List[ItemType])] = {
-    val children = taxonomies
-      .flatMap(_.descendants)
-      .map(d => (d, d))
-    val joinTarget = taxonomies
-      .map(t => (t.ancestor, t))
-      .partitionBy(new HashPartitioner(sc.defaultMinPartitions))
-      .cache()
-    val roots = joinTarget
-      .leftOuterJoin(children)
-      .filter(t => t._2._2.isEmpty)
-      .map(t => t._2._1)
-      .flatMap(t => t.descendants.map(d => (d, d :: t.ancestor :: Nil)))
-
-    def expand(temp: RDD[(ItemType, List[ItemType])]): RDD[List[ItemType]] = {
-      val expanded = joinTarget.rightOuterJoin(temp).cache()
-      val expansionCount = expanded.filter(_._2._1.isDefined).count()
-      val result = if (expansionCount > 0) {
-        expand(expanded.flatMap {
-          case (_, (Some(target), rest)) =>
-            target.descendants.map(d => (d, d :: rest))
-
-          case (last, (None, rest)) =>
-            (last, rest) :: Nil
-        })
-      } else temp.map(_._2)
-      expanded.unpersist()
-      result
-    }
-
-    joinTarget.unpersist()
-    expand(roots).map(items => (items.head, items.reverse))
-  }
 }
