@@ -2,7 +2,6 @@ package one.off_by.sequence.mining.gsp
 
 import org.apache.spark.Partitioner
 import org.apache.spark.rdd.RDD
-import org.apache.spark.storage.StorageLevel
 
 private[gsp] class PatternJoiner[ItemType: Ordering](
   partitioner: Partitioner
