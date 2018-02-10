@@ -37,8 +37,11 @@ lazy val sparkImplRunner = (project in file("spark-impl-runner"))
   .dependsOn(sparkImpl)
   .settings(commonSettings ++ Seq(
     libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-core" % "2.2.0" % "provided"
+      "org.apache.spark" %% "spark-core" % "2.2.0" % "provided",
+
+      "org.scalatest" %% "scalatest" % "3.0.1" % Test
     ),
+    parallelExecution in Test := false,
     assemblyMergeStrategy in assembly := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard
       case _ => MergeStrategy.first
