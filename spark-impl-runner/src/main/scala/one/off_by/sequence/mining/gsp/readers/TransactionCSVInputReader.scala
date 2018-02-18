@@ -1,5 +1,6 @@
 package one.off_by.sequence.mining.gsp.readers
 
+import com.github.tototoshi.csv.{CSVFormat, CSVParser, DefaultCSVFormat, Quoting}
 import one.off_by.sequence.mining.gsp.Transaction
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
@@ -12,9 +13,16 @@ class TransactionCSVInputReader extends InputReader {
 }
 
 object TransactionCSVInputReader {
+  private val format: CSVFormat = new DefaultCSVFormat {
+    override val escapeChar: Char = '\\'
+    override val lineTerminator: String = "\n"
+  }
+
+  private val parser: CSVParser = new CSVParser(format)
+
   def parseLineIntoTransaction(line: String): Transaction[String, Int, Int] =
-    line.split(",").toList match {
-      case sequenceId :: time :: items => Transaction(sequenceId.toInt, time.toInt, items.toSet)
+    parser.parseLine(line) match {
+      case Some(sequenceId :: time :: items) => Transaction(sequenceId.toInt, time.toInt, items.toSet)
       case _ => sys.error(s"malformed line: $line")
     }
 }

@@ -38,6 +38,7 @@ lazy val sparkImplRunner = (project in file("spark-impl-runner"))
   .settings(commonSettings ++ Seq(
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-core" % "2.2.0" % "provided",
+      "com.github.tototoshi" %% "scala-csv" % "1.3.5",
 
       "org.scalatest" %% "scalatest" % "3.0.1" % Test
     ),
