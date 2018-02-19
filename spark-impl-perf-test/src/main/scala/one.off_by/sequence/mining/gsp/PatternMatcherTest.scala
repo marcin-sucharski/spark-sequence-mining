@@ -1,25 +1,42 @@
 package one.off_by.sequence.mining.gsp
 
-import org.scalameter.api._
-import org.scalameter.picklers.Implicits._
+import org.openjdk.jmh.annotations._
+import org.openjdk.jmh.infra.Blackhole
 
-class PatternMatcherBenchmark extends Bench.LocalTime {
-  performance of "PatternMatcher" in {
-    import one.off_by.sequence.mining.gsp.PatternMatcherTest.options
-    import PatternMatcherTest.{genericSequence, longSequence}
 
-    measure method "matches" in {
-      performance of "GenericSequence" in {
-        using(Gen.crossProduct(options.possibleOptions, genericSequence.patterns)) in { case (opt, patterns) =>
-          (0 /: patterns)(_ + matches(_, genericSequence.searchableSequence, opt))
-        }
-      }
+@State(Scope.Benchmark)
+class PatternMatcherBenchmark {
+  @Param(Array("none", "withWindowSize", "withMinGap", "withMaxGap", "withAll"))
+  var optionsMode: String = _
 
-      performance of "LongSequence" in {
-        using(Gen.crossProduct(options.possibleOptions, longSequence.patterns)) in { case (opt, patterns) =>
-          (0 /: patterns)(_ + matches(_, longSequence.searchableSequence, opt))
-        }
-      }
+  @Param(Array("genericSequence", "longSequence"))
+  var sequenceType: String = _
+
+  @Setup
+  def setup(): Unit = {
+    options = PatternMatcherTest.options.optionsMap(optionsMode)
+
+    if (sequenceType == "genericSequence") {
+      patterns = PatternMatcherTest.genericSequence.patterns
+      searchableSequence = PatternMatcherTest.genericSequence.searchableSequence
+    }
+    else if (sequenceType == "longSequence") {
+      patterns = PatternMatcherTest.longSequence.patterns
+      searchableSequence = PatternMatcherTest.longSequence.searchableSequence
+    }
+    else sys.error("incorrect sequence type")
+  }
+
+  private var options: Option[PatternMatcherTest.options.OptionsType] = _
+  private var searchableSequence: PatternMatcher.SearchableSequence[Int, Int, Int] = _
+  private var patterns: Vector[Pattern[Int]] = _
+
+  @Benchmark
+  def measureMatchesPerformance(bh: Blackhole): Unit = {
+    var i = 0
+    while (i < patterns.size) {
+      bh.consume(PatternMatcher.matches(patterns(i), searchableSequence, options))
+      i += 1
     }
   }
 
@@ -33,6 +50,7 @@ class PatternMatcherBenchmark extends Bench.LocalTime {
 }
 
 private object PatternMatcherTest {
+
   object genericSequence {
     private val sequence: List[Transaction[Int, Int, Int]] = List[Transaction[Int, Int, Int]](
       Transaction(1, 10, Set(1, 2)),
@@ -47,7 +65,7 @@ private object PatternMatcherTest {
     val searchableSequence: PatternMatcher.SearchableSequence[Int, Int, Int] =
       PatternMatcher.buildSearchableSequence(sequence)
 
-    private val sourcePatterns = Vector(
+    val patterns = Vector(
       Pattern(Vector(Element(1, 2))),
       Pattern(Vector(Element(1))),
       Pattern(Vector(Element(1), Element(3))),
@@ -89,20 +107,6 @@ private object PatternMatcherTest {
       Pattern(Vector(Element(1, 2, 4, 6))),
       Pattern(Vector(Element(1, 2, 4), Element(2, 4, 6))),
       Pattern(Vector(Element(1, 2, 4), Element(1, 2), Element(2, 4, 6))))
-
-    private val infinitePatterns = Stream.continually(sourcePatterns).flatten
-
-    val patterns: Gen[IndexedSeq[Pattern[Int]]] = {
-      val thousand = 1000
-
-      val start = 10 * thousand
-      val stop = 100 * thousand
-      val step = 30 * thousand
-
-      Gen.range("size")(start, stop, step) map { size =>
-        infinitePatterns.take(size).toIndexedSeq
-      }
-    }
   }
 
   object longSequence {
@@ -128,17 +132,7 @@ private object PatternMatcherTest {
         Pattern(mappedItemsets.toVector)
       }
 
-    val patterns: Gen[IndexedSeq[Pattern[Int]]] = {
-      val hundred = 100
-
-      val start = 1 * hundred
-      val stop = 10 * hundred
-      val step = 3 * hundred
-
-      Gen.range("size")(start, stop, step) map { size =>
-        infinitePatterns.take(size).toIndexedSeq
-      }
-    }
+    val patterns: Vector[Pattern[Int]] = infinitePatterns.take(50).toVector
   }
 
   object options {
@@ -155,14 +149,12 @@ private object PatternMatcherTest {
       minGap = Some(20),
       maxGap = Some(40)))
 
-    private val optionsMap = Map(
+    val optionsMap = Map(
       "none" -> none,
       "withWindowSize" -> withWindowSize,
       "withMinGap" -> withMinGap,
       "withMaxGap" -> withMaxGap,
       "withAll" -> withAll)
-
-    val possibleOptions: Gen[Option[OptionsType]] =
-      Gen.enumeration("options")(optionsMap.keys.toSeq: _*) map (optionsMap(_))
   }
+
 }

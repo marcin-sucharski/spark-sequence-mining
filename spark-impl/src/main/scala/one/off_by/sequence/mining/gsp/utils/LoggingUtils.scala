@@ -1,4 +1,4 @@
-package one.off_by.sequence.mining.gsp
+package one.off_by.sequence.mining.gsp.utils
 
 import grizzled.slf4j.Logging
 import org.apache.spark.rdd.RDD

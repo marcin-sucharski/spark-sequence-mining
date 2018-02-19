@@ -51,10 +51,11 @@ SequenceId](
       times.sorted == times
     }
 
+    import one.off_by.sequence.mining.gsp.utils.CollectionDistinctUtils._
+
     val inputSequence = sequence.toList.flatMap(t => t.items.toList.sorted.map(x => (t.time, x)))
     findPossiblePatternsInternal(gspOptions, inputSequence.head, inputSequence)
-      .toSet
-      .iterator
+      .distinct
   }
 
   protected[gsp] override def addInternal(

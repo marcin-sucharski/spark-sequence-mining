@@ -1,5 +1,6 @@
 package one.off_by.sequence.mining.gsp
 
+import one.off_by.sequence.mining.gsp.utils.LoggingUtils
 import org.apache.spark.api.java.StorageLevels
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, Partitioner, SparkContext}

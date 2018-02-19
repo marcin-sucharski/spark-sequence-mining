@@ -1,6 +1,7 @@
 package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
+import one.off_by.sequence.mining.gsp.utils.LoggingUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{Partitioner, SparkContext}
 

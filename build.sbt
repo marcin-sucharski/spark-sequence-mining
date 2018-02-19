@@ -1,3 +1,5 @@
+import pl.project13.scala.sbt.JmhPlugin
+
 name := "spark-data-mining"
 
 version := "1.0"
@@ -28,8 +30,8 @@ lazy val sparkImpl = (project in file("spark-impl"))
       "org.scalamock" %% "scalamock-scalatest-support" % "3.6.0" % Test),
     parallelExecution in Test := false,
     assemblyMergeStrategy in assembly := {
-      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case _ => MergeStrategy.first
+      case PathList("META-INF", xs@_*) => MergeStrategy.discard
+      case _                           => MergeStrategy.first
     }
   ))
 
@@ -44,20 +46,17 @@ lazy val sparkImplRunner = (project in file("spark-impl-runner"))
     ),
     parallelExecution in Test := false,
     assemblyMergeStrategy in assembly := {
-      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case _ => MergeStrategy.first
+      case PathList("META-INF", xs@_*) => MergeStrategy.discard
+      case _                           => MergeStrategy.first
     }
   ))
 
 lazy val sparkImplPerfTest = (project in file("spark-impl-perf-test"))
   .dependsOn(sparkImpl)
   .settings(commonSettings ++ Seq(
-    resolvers += "Sonatype OSS Snapshots" at
-      "https://oss.sonatype.org/content/repositories/snapshots",
-    libraryDependencies ++= Seq(
-      "com.storm-enroute" %% "scalameter" % "0.8.2"),
     parallelExecution in Test := false,
-    testFrameworks += new TestFramework("org.scalameter.ScalaMeterFramework"),
     logBuffered := false))
+  .enablePlugins(JmhPlugin)
+
 
 (assembly in sparkImplRunner) := ((assembly in sparkImplRunner) dependsOn (assembly in sparkImpl)).value
