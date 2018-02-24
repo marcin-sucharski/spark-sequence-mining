@@ -13,7 +13,11 @@ lazy val commonSettings = Seq(
   scalacOptions ++= Seq(
     "-optimize",
     "-Yinline-warnings",
-    "-Xelide-below", "3000"))
+    "-Xelide-below", "3000"
+  ),
+  version := "0.1.0",
+  organization := "one.off_by"
+)
 
 lazy val dataGenerator = (project in file("data-generator"))
   .settings(commonSettings)
@@ -32,7 +36,8 @@ lazy val sparkImpl = (project in file("spark-impl"))
     assemblyMergeStrategy in assembly := {
       case PathList("META-INF", xs@_*) => MergeStrategy.discard
       case _                           => MergeStrategy.first
-    }
+    },
+    assemblyJarName := s"spark-gsp-${version.value}.jar"
   ))
 
 lazy val sparkImplRunner = (project in file("spark-impl-runner"))
@@ -48,7 +53,8 @@ lazy val sparkImplRunner = (project in file("spark-impl-runner"))
     assemblyMergeStrategy in assembly := {
       case PathList("META-INF", xs@_*) => MergeStrategy.discard
       case _                           => MergeStrategy.first
-    }
+    },
+    assemblyJarName := s"spark-gsp-runner-${version.value}.jar"
   ))
 
 lazy val sparkImplPerfTest = (project in file("spark-impl-perf-test"))
