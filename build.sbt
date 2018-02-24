@@ -2,7 +2,7 @@ import pl.project13.scala.sbt.JmhPlugin
 
 name := "spark-data-mining"
 
-version := "1.0"
+version := "0.1.0"
 
 val scalaV = "2.11.11"
 
@@ -15,9 +15,11 @@ lazy val commonSettings = Seq(
     "-Yinline-warnings",
     "-Xelide-below", "3000"
   ),
-  version := "0.1.0",
+  version := (version in root).value,
   organization := "one.off_by"
 )
+
+lazy val root = project in file(".")
 
 lazy val dataGenerator = (project in file("data-generator"))
   .settings(commonSettings)
@@ -54,7 +56,8 @@ lazy val sparkImplRunner = (project in file("spark-impl-runner"))
       case PathList("META-INF", xs@_*) => MergeStrategy.discard
       case _                           => MergeStrategy.first
     },
-    assemblyJarName := s"spark-gsp-runner-${version.value}.jar"
+    assemblyJarName := s"spark-gsp-runner-${version.value}.jar",
+    assembly := (assembly dependsOn (assembly in sparkImpl)).value
   ))
 
 lazy val sparkImplPerfTest = (project in file("spark-impl-perf-test"))
@@ -63,6 +66,3 @@ lazy val sparkImplPerfTest = (project in file("spark-impl-perf-test"))
     parallelExecution in Test := false,
     logBuffered := false))
   .enablePlugins(JmhPlugin)
-
-
-(assembly in sparkImplRunner) := ((assembly in sparkImplRunner) dependsOn (assembly in sparkImpl)).value
