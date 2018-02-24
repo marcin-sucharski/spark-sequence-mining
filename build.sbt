@@ -1,12 +1,6 @@
 import pl.project13.scala.sbt.JmhPlugin
 
-name := "spark-data-mining"
-
-version := "0.1.0"
-
 val scalaV = "2.11.11"
-
-scalaVersion := scalaV
 
 lazy val commonSettings = Seq(
   scalaVersion := scalaV,
@@ -15,11 +9,15 @@ lazy val commonSettings = Seq(
     "-Yinline-warnings",
     "-Xelide-below", "3000"
   ),
-  version := (version in root).value,
+  version := (version in ThisBuild).value,
   organization := "one.off_by"
 )
 
-lazy val root = project in file(".")
+lazy val root = (project in file("."))
+  .settings(commonSettings ++ Seq(
+    name := "spark-data-mining",
+    assembly := (assembly in sparkImplRunner).value
+  ))
 
 lazy val dataGenerator = (project in file("data-generator"))
   .settings(commonSettings)
