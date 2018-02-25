@@ -27,7 +27,7 @@ class GSPRunner(
       val gsp = new GSP[String, Int, Int, Int](sc)
       gsp.execute(input, args.minSupport, args.minItemsInPattern, None, args.toOptions)
         .sortBy(x => (x._1.elements.map(_.items.size).sum, x._2))
-        .map(mapResultToString)
+        .map(result => s"${result._2} # ${result._1}")
         .saveAsTextFile(args.outputFile)
     } catch {
       case e: ArgumentParserException =>
@@ -35,9 +35,6 @@ class GSPRunner(
         System.exit(-1)
     }
   }
-
-  private def mapResultToString(result: (Pattern[String], SupportCount)): String =
-    s"${result._2} # ${result._1}"
 }
 
 object GSPRunnerSequencePerLine extends GSPRunner(new SequencePerLineInputReader())
