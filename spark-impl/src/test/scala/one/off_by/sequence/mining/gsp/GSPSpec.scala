@@ -148,7 +148,7 @@ class GSPSpec extends WordSpec
     "have prepareInitialPatterns method" which {
       "returns empty RDD for empty RDD" in withGSP { gsp =>
         val input = sc.parallelize(List[(SequenceId, gsp.TransactionType)]()).partitionBy(gsp.partitioner)
-        val minSupportCount = 0L
+        val minSupportCount = 0
 
         gsp.prepareInitialPatterns(input, minSupportCount) should be(empty)
       }
@@ -162,12 +162,12 @@ class GSPSpec extends WordSpec
           (2, Transaction(2, 2, secondItem)),
           (3, Transaction(3, 3, thirdItem))
         )).partitionBy(gsp.partitioner)
-        val minSupportCount = 1L
+        val minSupportCount = 1
 
         val result = gsp.prepareInitialPatterns(input, minSupportCount).collect()
 
         forAll(result.map(_._2)) { support =>
-          support shouldBe 1L
+          support shouldBe 1
         }
         result.map(_._1) should contain theSameElementsAs List(
           Pattern(Vector(Element(1))),
@@ -191,7 +191,7 @@ class GSPSpec extends WordSpec
           (5, Transaction(5, 5, thirdItem)),
           (6, Transaction(6, 6, thirdItem))
         )).partitionBy(gsp.partitioner)
-        val minSupportCount = 2L
+        val minSupportCount = 2
 
         val result = gsp.prepareInitialPatterns(input, minSupportCount).collect()
 

@@ -38,5 +38,5 @@ case class Pattern[ItemType](
 object Domain {
   type Percent = Double
   type Support = Percent
-  type SupportCount = Long
+  type SupportCount = Int
 }

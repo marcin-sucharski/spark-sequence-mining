@@ -1,14 +1,18 @@
 package one.off_by.sequence.mining.gsp.readers
 
 import one.off_by.sequence.mining.gsp.Transaction
-import org.apache.spark.SparkContext
+import org.apache.spark.{Partitioner, SparkContext}
 import org.apache.spark.rdd.RDD
 
 import scala.util.control.NonFatal
 
 class SequencePerLineInputReader extends InputReader {
-  override def read(sc: SparkContext, inputPath: String): RDD[Transaction[String, Int, Int]] =
-    sc.textFile(inputPath)
+  override def read(
+    sc: SparkContext,
+    inputPath: String,
+    maybePartitioner: Option[Partitioner] = None
+  ): RDD[Transaction[String, Int, Int]] =
+    sc.textFile(inputPath, maybePartitioner.map(_.numPartitions).getOrElse(sc.defaultMinPartitions))
       .filter(_.trim.nonEmpty)
       .flatMap(SequencePerLineInputReader.parseLineIntoTransactions)
 }

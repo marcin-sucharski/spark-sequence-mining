@@ -2,11 +2,15 @@ package one.off_by.sequence.mining.gsp.readers
 
 import com.github.tototoshi.csv.{CSVFormat, CSVParser, DefaultCSVFormat, Quoting}
 import one.off_by.sequence.mining.gsp.Transaction
-import org.apache.spark.SparkContext
+import org.apache.spark.{Partitioner, SparkContext}
 import org.apache.spark.rdd.RDD
 
 class TransactionCSVInputReader extends InputReader {
-  override def read(sc: SparkContext, inputPath: String): RDD[Transaction[String, Int, Int]] =
+  override def read(
+    sc: SparkContext,
+    inputPath: String,
+    maybePartitioner: Option[Partitioner] = None
+  ): RDD[Transaction[String, Int, Int]] =
     sc.textFile(inputPath)
       .filter(_.trim.nonEmpty)
       .map(TransactionCSVInputReader.parseLineIntoTransaction)

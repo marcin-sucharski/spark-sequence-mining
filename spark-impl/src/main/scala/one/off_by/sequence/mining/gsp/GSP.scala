@@ -64,7 +64,7 @@ SequenceId: ClassTag](
       .cache()
 
     val sequenceCount = sequences.keys.distinct.count()
-    val minSupportCount = (sequenceCount * minSupport).toLong
+    val minSupportCount = (sequenceCount * minSupport).toInt
     logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount.")
 
     val patternMatcher = createPatternMatcher(maybeOptions, sequences, minSupportCount)
@@ -102,14 +102,14 @@ SequenceId: ClassTag](
 
   private[gsp] def prepareInitialPatterns(
     sequences: RDD[(SequenceId, TransactionType)],
-    minSupportCount: Long
+    minSupportCount: SupportCount
   ): RDD[(Pattern[ItemType], SupportCount)] = {
     assume(sequences.partitioner contains partitioner)
     sequences
       .flatMapValues(_.items.map(Element(_)))
       .mapPartitions(_.toSet.toIterator, preservesPartitioning = true)
       .values
-      .map(element => (Pattern(Vector(element)), 1L))
+      .map(element => (Pattern(Vector(element)), 1))
       .reduceByKey(_ + _)
       .filter(_._2 >= minSupportCount)
   }

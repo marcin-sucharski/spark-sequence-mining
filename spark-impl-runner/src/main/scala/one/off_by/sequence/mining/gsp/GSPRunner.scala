@@ -22,9 +22,10 @@ class GSPRunner(
 
     try {
       val args = ArgumentParser.parseArguments(cmdArgs)
-      val input = inputReader.read(sc, args.inputFile)
-
       val gsp = new GSP[String, Int, Int, Int](sc)
+
+      val input = inputReader.read(sc, args.inputFile, Some(gsp.partitioner))
+
       gsp.execute(input, args.minSupport, args.minItemsInPattern, None, args.toOptions)
         .sortBy(x => (x._1.elements.map(_.items.size).sum, x._2))
         .map(result => s"${result._2} # ${result._1}")

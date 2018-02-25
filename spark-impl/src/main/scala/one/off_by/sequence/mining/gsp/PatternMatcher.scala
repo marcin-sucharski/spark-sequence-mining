@@ -2,6 +2,7 @@ package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import one.off_by.sequence.mining.gsp.utils.LoggingUtils
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{Partitioner, SparkContext}
 
@@ -20,27 +21,29 @@ SequenceId: ClassTag](
   partitioner: Partitioner,
   sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
   gspOptions: Option[GSPOptions[TimeType, DurationType]],
-  minSupportCount: Long
+  minSupportCount: Int
 )(implicit timeOrdering: Ordering[TimeType]) extends LoggingUtils {
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
-  type SupportCount = Long
+  type SupportCount = Int
 
-  private[gsp] val searchableSequences: RDD[(Iterable[TransactionType], SearchableSequenceType)] = {
+  private[gsp] val searchableSequences: Broadcast[Array[(Iterable[TransactionType], SearchableSequenceType)]] = {
     implicit val localOrdering: Ordering[TimeType] = timeOrdering
-    sequences.groupByKey()
-      .values
-      .map { sequence =>
-        (sequence, PatternMatcher.buildSearchableSequence(sequence)(localOrdering))
-      }
-      .repartition(partitioner.numPartitions)
-      .cache()
+    sc.broadcast {
+      sequences.groupByKey()
+        .values
+        .map { sequence =>
+          (sequence, PatternMatcher.buildSearchableSequence(sequence)(localOrdering))
+        }
+        .collect()
+    }
   }
 
   private def makeEmptyHashTree(): HashTree[ItemType, TimeType, DurationType, SequenceId] =
     HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId]()(implicitly[Ordering[ItemType]], timeOrdering)
 
   def filter(in: RDD[Pattern[ItemType]]): RDD[(Pattern[ItemType], SupportCount)] = {
+    val searchableSequencesBV = searchableSequences
     val timeOrderingLocal = timeOrdering
     val minSupportCountLocal = minSupportCount
     val gspOptionsLocal = gspOptions
@@ -48,19 +51,14 @@ SequenceId: ClassTag](
     val emptyHashTree = makeEmptyHashTree()
     val hashTrees = in mapPartitions { patterns =>
       ((emptyHashTree /: patterns) (_ add _) :: Nil).toIterator
-    } cache()
-
-    logger trace {
-      val beforeMatching = hashTrees cartesian searchableSequences flatMap { case (hashTree, (sequence, _)) =>
-        hashTree.findPossiblePatterns(gspOptionsLocal, sequence)
-      } map (_.toString)
-      s"Candidates before matching: ${beforeMatching.distinct().toPrettyList}"
     }
 
-    val counted = searchableSequences cartesian hashTrees flatMap { case ((sequence, searchable), hashTree) =>
-      hashTree.findPossiblePatterns(gspOptionsLocal, sequence) filter { pattern =>
-        PatternMatcher.matches(pattern, searchable, gspOptionsLocal)(timeOrderingLocal)
-      } map (p => (p, 1L))
+    val counted = hashTrees flatMap { hashTree =>
+      searchableSequencesBV.value flatMap { case (sequence, searchable) =>
+        hashTree.findPossiblePatterns(gspOptionsLocal, sequence) filter { pattern =>
+          PatternMatcher.matches(pattern, searchable, gspOptionsLocal)(timeOrderingLocal)
+        }
+      } map (p => (p, 1))
     } reduceByKey (_ + _)
 
     logger trace {
