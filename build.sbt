@@ -16,7 +16,8 @@ lazy val commonSettings = Seq(
 lazy val root = (project in file("."))
   .settings(commonSettings ++ Seq(
     name := "spark-data-mining",
-    assembly := (assembly in sparkImplRunner).value
+    assembly := (assembly in sparkImplRunner).value,
+    test in Test := ((test in sparkImplRunner in Test) dependsOn (test in sparkImpl in Test)).value
   ))
 
 lazy val dataGenerator = (project in file("data-generator"))
