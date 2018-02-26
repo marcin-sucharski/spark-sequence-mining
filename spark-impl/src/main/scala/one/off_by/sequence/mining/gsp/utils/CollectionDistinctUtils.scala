@@ -106,7 +106,7 @@ object CollectionDistinctUtils {
     var topIndex: Int
   )
 
-  private[this] val maxSetLevels = 16
+  private[this] val maxSetLevels = 32
   private[this] val sizeMultiplier = 2
   private[this] val baseArraySize = 32
 }
