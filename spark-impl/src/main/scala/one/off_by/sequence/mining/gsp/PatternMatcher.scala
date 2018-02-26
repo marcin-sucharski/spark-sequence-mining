@@ -4,6 +4,7 @@ import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
 import one.off_by.sequence.mining.gsp.utils.LoggingUtils
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
+import org.apache.spark.util.LongAccumulator
 import org.apache.spark.{Partitioner, SparkContext}
 
 import scala.annotation.tailrec
@@ -42,7 +43,10 @@ SequenceId: ClassTag](
   private def makeEmptyHashTree(): HashTree[ItemType, TimeType, DurationType, SequenceId] =
     HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId]()(implicitly[Ordering[ItemType]], timeOrdering)
 
-  def filter(in: RDD[Pattern[ItemType]]): RDD[(Pattern[ItemType], SupportCount)] = {
+  def filter(
+    in: RDD[Pattern[ItemType]],
+    maybeCandidateCountAccumulator: Option[LongAccumulator] = None
+  ): RDD[(Pattern[ItemType], SupportCount)] = {
     val searchableSequencesBV = searchableSequences
     val timeOrderingLocal = timeOrdering
     val minSupportCountLocal = minSupportCount
@@ -50,7 +54,11 @@ SequenceId: ClassTag](
 
     val emptyHashTree = makeEmptyHashTree()
     val hashTrees = in mapPartitions { patterns =>
-      ((emptyHashTree /: patterns) (_ add _) :: Nil).toIterator
+      val resultTree = patterns.foldLeft(emptyHashTree) { case (tree, pattern) =>
+        maybeCandidateCountAccumulator.foreach(_.add(1L))
+        tree.add(pattern)
+      }
+      (resultTree :: Nil).toIterator
     }
 
     val counted = hashTrees flatMap { hashTree =>
@@ -173,10 +181,10 @@ private[gsp] object PatternMatcher {
     assume(seq.items.forall(_._2.nonEmpty))
     assume(seq.items.nonEmpty)
 
-    trait PatternExtendResult
-    case object PatternExtendSuccess extends PatternExtendResult
-    case class PatternExtendBacktrace(minTime: MinTime[TimeType]) extends PatternExtendResult
-    case object PatternExtendFailure extends PatternExtendResult
+    sealed trait PatternExtendResult
+    final case object PatternExtendSuccess extends PatternExtendResult
+    final case class PatternExtendBacktrace(minTime: MinTime[TimeType]) extends PatternExtendResult
+    final case object PatternExtendFailure extends PatternExtendResult
 
     val elementFinder: ElementFinder[ItemType, TimeType] = gspOptions collect {
       case GSPOptions(typeSupport, Some(windowSize), _, _) =>

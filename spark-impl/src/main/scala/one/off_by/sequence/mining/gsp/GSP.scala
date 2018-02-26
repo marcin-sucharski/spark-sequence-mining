@@ -70,16 +70,22 @@ SequenceId: ClassTag](
     val patternMatcher = createPatternMatcher(maybeOptions, sequences, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
-      .cache()
+      .persist(StorageLevels.MEMORY_AND_DISK_SER)
+
+    initialPatterns.take(1)
+    sequences.unpersist()
+
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
     val result = Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
       val newLength = prevLength + 1
       logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))
       logger.trace(s"Candidates: ${candidates.map(_.toString).toPrettyList}")
-      val phaseResult = patternMatcher.filter(candidates)
-        .persist(StorageLevels.MEMORY_AND_DISK)
+      val candidateCount = sc.longAccumulator
+      val phaseResult = patternMatcher.filter(candidates, Some(candidateCount))
+        .persist(StorageLevels.MEMORY_AND_DISK_SER)
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
+      logger.info(s"There was approximately ${candidateCount.value} candidates.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
     } takeWhile (!_.lastPattern.isEmpty()) lastOption
 

@@ -29,7 +29,7 @@ SequenceId] {
     sequence: List[(TimeType, ItemType)]): Iterator[PatternType]
 }
 
-private[gsp] case class HashTreeNode[
+private[gsp] final case class HashTreeNode[
 ItemType: Ordering,
 @specialized(Int, Long, Float, Double) TimeType: Ordering,
 @specialized(Int, Long, Float, Double) DurationType,
@@ -126,16 +126,16 @@ SequenceId](
     implicitly[Ordering[TimeType]].lteq(item, timeAdd(first, maxGap))
 }
 
-private class ItemWithSequenceIterator[
+private final class ItemWithSequenceIterator[
 ItemType,
 @specialized(Int, Long, Float, Double) TimeType: Ordering,
 @specialized(Int, Long, Float, Double) DurationType
 ](
-  private var current: List[(TimeType, ItemType)],
+  private[this] var current: List[(TimeType, ItemType)],
   maybeOptions: Option[GSPOptions[TimeType, DurationType]]
 ) extends Iterator[((TimeType, ItemType), List[(TimeType, ItemType)])] {
 
-  private var previous = current
+  private[this] var previous = current
 
   override def hasNext: Boolean = current.nonEmpty
 
@@ -145,7 +145,7 @@ ItemType,
     result
   }
 
-  private def pullUpPrevious(): List[(TimeType, ItemType)] = {
+  private[this] def pullUpPrevious(): List[(TimeType, ItemType)] = {
     val zeroTime = current.head._1
     val target = maybeOptions map { options =>
       options.windowSize.fold(zeroTime) { windowSize =>
@@ -161,7 +161,7 @@ ItemType,
   }
 }
 
-private[gsp] case class HashTreeLeaf[
+private[gsp] final case class HashTreeLeaf[
 ItemType: Ordering,
 @specialized(Int, Long, Float, Double) TimeType: Ordering,
 @specialized(Int, Long, Float, Double) DurationType,
