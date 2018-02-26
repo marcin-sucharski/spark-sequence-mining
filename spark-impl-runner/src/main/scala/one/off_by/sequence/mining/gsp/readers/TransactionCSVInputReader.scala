@@ -18,7 +18,6 @@ class TransactionCSVInputReader extends InputReader {
 
 object TransactionCSVInputReader {
   private val format: CSVFormat = new DefaultCSVFormat {
-    override val escapeChar: Char = '\\'
     override val lineTerminator: String = "\n"
   }
 
