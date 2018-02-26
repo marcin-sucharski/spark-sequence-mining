@@ -234,7 +234,7 @@ private[gsp] object PatternMatcher {
     }
   }
 
-  trait ElementFinder[ItemType, TimeType] {
+  sealed trait ElementFinder[ItemType, TimeType] {
     type TransactionStartTime = TimeType
     type TransactionEndTime = TimeType
 
@@ -246,18 +246,18 @@ private[gsp] object PatternMatcher {
 
     implicit def timeOrdering: Ordering[TimeType]
 
-    protected def findFirst(minTime: MinTime[TimeType], item: ItemType): Option[TimeType] =
+    protected final def findFirst(minTime: MinTime[TimeType], item: ItemType): Option[TimeType] =
       if (minTime.inclusive) sequence.findFirstOccurrenceSameOrAfter(minTime.time, item)
       else sequence.findFirstOccurrenceAfter(minTime.time, item)
   }
 
-  class SimpleElementFinder[ItemType, TimeType, SequenceId](
+  final class SimpleElementFinder[ItemType, TimeType, SequenceId](
     val sequence: SearchableSequence[ItemType, TimeType, SequenceId]
   )(implicit val timeOrdering: Ordering[TimeType]) extends ElementFinder[ItemType, TimeType]
     with FindFirstHelper[ItemType, TimeType, SequenceId] {
 
     @tailrec
-    final override def find(
+    override def find(
       minTime: MinTime[TimeType],
       element: Element[ItemType]
     ): Option[(TransactionStartTime, TransactionEndTime)] =
@@ -277,7 +277,7 @@ private[gsp] object PatternMatcher {
       }
   }
 
-  class SlidingWindowElementFinder[
+  final class SlidingWindowElementFinder[
   ItemType, TimeType, SequenceId, DurationType
   ](
     val sequence: SearchableSequence[ItemType, TimeType, SequenceId],
@@ -294,7 +294,7 @@ private[gsp] object PatternMatcher {
     import Helper.TimeSupport
 
     @tailrec
-    final override def find(
+    override def find(
       minTime: MinTime[TimeType],
       element: Element[ItemType]
     ): Option[(TransactionStartTime, TransactionEndTime)] = {
