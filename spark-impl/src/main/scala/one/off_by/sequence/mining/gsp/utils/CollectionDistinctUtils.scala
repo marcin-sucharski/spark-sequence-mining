@@ -27,7 +27,7 @@ object CollectionDistinctUtils {
         var current = state.topIndex
 
         while (current >= 0) {
-          val array = state.set(current)
+          val array = state.arrays(current)
           val index = hashCode & (array.length - 1)
           if (array(index) == null || array(index) == item) {
             array(index) = item
@@ -46,7 +46,7 @@ object CollectionDistinctUtils {
         val nextArray = new Array[T](state.lastLayerSize)
         nextArray(hashCode & (state.lastLayerSize - 1)) = item
         state.topIndex += 1
-        state.set(state.topIndex) = nextArray
+        state.arrays(state.topIndex) = nextArray
       }
 
       while (iterator.hasNext) {
@@ -65,25 +65,25 @@ object CollectionDistinctUtils {
         private[this] var nextIndex = 0
 
         override def hasNext: Boolean = {
-          while (state.topIndex >= 0 && state.set(state.topIndex)(nextIndex) == null) {
+          while (state.topIndex >= 0 && state.arrays(state.topIndex)(nextIndex) == null) {
             if (!findNextInArray()) {
-              state.set(state.topIndex) = null
+              state.arrays(state.topIndex) = null
               state.topIndex -= 1
               nextIndex = 0
             }
           }
 
-          state.topIndex >= 0 && state.set(state.topIndex)(nextIndex) != null
+          state.topIndex >= 0 && state.arrays(state.topIndex)(nextIndex) != null
         }
 
         override def next(): T =
           if (hasNext) {
-            val item = state.set(state.topIndex)(nextIndex)
+            val item = state.arrays(state.topIndex)(nextIndex)
             var current = state.topIndex
             while (current >= 0) {
-              val index = nextIndex & (state.set(current).length - 1)
-              if (state.set(current)(index) == item) {
-                state.set(current)(index) = null
+              val index = nextIndex & (state.arrays(current).length - 1)
+              if (state.arrays(current)(index) == item) {
+                state.arrays(current)(index) = null
               }
               current -= 1
             }
@@ -91,7 +91,7 @@ object CollectionDistinctUtils {
           } else Iterator.empty.next()
 
         private def findNextInArray(): Boolean = {
-          val array = state.set(state.topIndex)
+          val array = state.arrays(state.topIndex)
           while (nextIndex < array.length && array(nextIndex) == null) {
             nextIndex += 1
           }
@@ -101,7 +101,7 @@ object CollectionDistinctUtils {
   }
 
   private[this] final case class ArraySetState[T](
-    set: Array[Array[T]],
+    arrays: Array[Array[T]],
     var lastLayerSize: Int,
     var topIndex: Int
   )
