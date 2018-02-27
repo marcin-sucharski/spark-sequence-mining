@@ -19,6 +19,7 @@ lazy val root = (project in file("."))
     assembly := (assembly in sparkImplRunner).value,
     test in Test := ((test in sparkImplRunner in Test) dependsOn (test in sparkImpl in Test)).value
   ))
+  .aggregate(sparkImpl, sparkImplRunner, dataGenerator, sparkImplPerfTest)
 
 lazy val dataGenerator = (project in file("data-generator"))
   .settings(commonSettings)

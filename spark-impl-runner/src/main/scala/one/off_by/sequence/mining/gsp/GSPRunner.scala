@@ -22,11 +22,16 @@ class GSPRunner(
 
     try {
       val args = ArgumentParser.parseArguments(cmdArgs)
-      val gsp = new GSP[String, Int, Int, Int](sc)
+      val gsp = new GSP[Int, Int, Int, Int](sc)
 
       val input = inputReader.read(sc, args.inputFile, Some(gsp.partitioner))
+      val mappings = ItemToIdMapper.createMappings(input)
+      val inputOptimized = ItemToIdMapper.mapIn(input, mappings)
 
-      gsp.execute(input, args.minSupport, args.minItemsInPattern, None, args.toOptions)
+      val result = gsp.execute(inputOptimized, args.minSupport, args.minItemsInPattern, args.toOptions)
+      val resultGeneric = ItemToIdMapper.mapOut(result, mappings)
+
+      resultGeneric
         .sortBy(x => (x._1.elements.map(_.items.size).sum, x._2))
         .map(result => s"${result._2} # ${result._1}")
         .saveAsTextFile(args.outputFile)

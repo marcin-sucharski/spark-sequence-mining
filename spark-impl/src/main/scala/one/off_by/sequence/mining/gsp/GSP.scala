@@ -26,7 +26,7 @@ case class GSPTypeSupport[
 )(implicit val durationOrdering: Ordering[DurationType])
 
 class GSP[
-ItemType: ClassTag,
+@specialized(Int, Long, Float, Double) ItemType: ClassTag,
 @specialized(Int, Long, Float, Double) DurationType,
 @specialized(Int, Long, Float, Double) TimeType,
 SequenceId: ClassTag](
@@ -39,7 +39,6 @@ SequenceId: ClassTag](
 
   import Domain.{Percent, SupportCount}
 
-  type TaxonomyType = Taxonomy[ItemType]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
 
   private[gsp] val partitioner: Partitioner =
@@ -51,7 +50,6 @@ SequenceId: ClassTag](
     transactions: RDD[TransactionType],
     minSupport: Percent,
     minItemsInPattern: Long = 1L,
-    maybeTaxonomies: Option[RDD[TaxonomyType]] = None,
     maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None
   ): RDD[(Pattern[ItemType], SupportCount)] = {
     def maybeFilterOut(itemsCount: Long, result: RDD[(Pattern[ItemType], SupportCount)]) =

@@ -1,6 +1,10 @@
 package one.off_by.sequence.mining.gsp
 
-case class Transaction[ItemType, @specialized(Int, Long, Float, Double) TimeType, SequenceId](
+case class Transaction[
+@specialized(Int, Long, Float, Double) ItemType,
+@specialized(Int, Long, Float, Double) TimeType,
+SequenceId
+](
   sequenceId: SequenceId,
   time: TimeType,
   items: Set[ItemType]
@@ -8,12 +12,7 @@ case class Transaction[ItemType, @specialized(Int, Long, Float, Double) TimeType
   assume(items.nonEmpty)
 }
 
-case class Taxonomy[ItemType](
-  ancestor: ItemType,
-  descendants: List[ItemType]
-)
-
-case class Element[ItemType](
+case class Element[@specialized(Int, Long, Float, Double) ItemType](
   items: Set[ItemType]
 ) {
   def +(item: ItemType): Element[ItemType] =
@@ -23,11 +22,11 @@ case class Element[ItemType](
 }
 
 object Element {
-  def apply[ItemType](items: ItemType*): Element[ItemType] =
+  def apply[@specialized(Int, Long, Float, Double) ItemType](items: ItemType*): Element[ItemType] =
     Element(Set(items: _*))
 }
 
-case class Pattern[ItemType](
+case class Pattern[@specialized(Int, Long, Float, Double) ItemType](
   elements: Vector[Element[ItemType]]
 ) {
   override def toString = elements.mkString("<", "", ">")
