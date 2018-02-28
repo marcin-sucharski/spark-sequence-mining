@@ -3,6 +3,7 @@ package one.off_by.sequence.mining.gsp
 import grizzled.slf4j.Logging
 import one.off_by.sequence.mining.gsp.Domain.SupportCount
 import one.off_by.sequence.mining.gsp.readers.{InputReader, SequencePerLineInputReader, TransactionCSVInputReader}
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
 
 class GSPRunner(
@@ -25,7 +26,7 @@ class GSPRunner(
       val gsp = new GSP[Int, Int, Int, Int](sc)
 
       val input = inputReader.read(sc, args.inputFile, Some(gsp.partitioner))
-      val mappings = ItemToIdMapper.createMappings(input)
+      val mappings = ItemToIdMapper.createMappings(input).persist(StorageLevel.DISK_ONLY_2)
       val inputOptimized = ItemToIdMapper.mapIn(input, mappings)
 
       val result = gsp.execute(inputOptimized, args.minSupport, args.minItemsInPattern, args.toOptions)
