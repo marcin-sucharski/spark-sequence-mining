@@ -52,7 +52,7 @@ class PatternMatcherBenchmark {
 private object PatternMatcherTest {
 
   object genericSequence {
-    private val sequence: List[Transaction[Int, Int, Int]] = List[Transaction[Int, Int, Int]](
+    private val sequence: Vector[Transaction[Int, Int, Int]] = Vector[Transaction[Int, Int, Int]](
       Transaction(1, 10, Set(1, 2)),
       Transaction(1, 25, Set(4, 6)),
       Transaction(1, 45, Set(3)),
@@ -115,9 +115,9 @@ private object PatternMatcherTest {
     private val availableItems = List(1, 2, 3, 4, 5, 6, 7)
     private val itemsSource = Stream.continually(availableItems).flatten
 
-    private val sequence = 1 to sequenceLength map { i =>
+    private val sequence = (1 to sequenceLength map { i =>
       Transaction[Int, Int, Int](1, i * 5, itemsSource.take(i % moduloItems + 1).toSet)
-    }
+    }).toVector
 
     val searchableSequence: PatternMatcher.SearchableSequence[Int, Int, Int] =
       PatternMatcher.buildSearchableSequence(sequence)

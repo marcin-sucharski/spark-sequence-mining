@@ -99,8 +99,8 @@ class PatternMatcherCompanionSpec extends FreeSpec
         val searchableSequence = SearchableSequence[Int, Int, Int](
           1,
           Map(
-            1 -> Vector(1, 2, 3),
-            2 -> Vector(3, 5, 7)),
+            1 -> Array(1, 2, 3),
+            2 -> Array(3, 5, 7)),
           1,
           7)
 
@@ -143,7 +143,7 @@ class PatternMatcherCompanionSpec extends FreeSpec
       }
 
       "have internal `matches` method which" - {
-        val sequence = List[Transaction[Int, Int, Int]](
+        val sequence = Vector[Transaction[Int, Int, Int]](
           Transaction(1, 10, Set(1, 2)),
           Transaction(1, 25, Set(4, 6)),
           Transaction(1, 45, Set(3)),
@@ -156,7 +156,7 @@ class PatternMatcherCompanionSpec extends FreeSpec
 
         def withMatcher(
           options: Option[GSPOptions[Int, Int]],
-          testSequence: List[Transaction[Int, Int, Int]] = sequence
+          testSequence: Vector[Transaction[Int, Int, Int]] = sequence
         )(f: MatchesFunction[Int] => Unit): Unit = {
           f(PatternMatcher.matches[Int, Int, Int, Int](
             _,
@@ -307,7 +307,7 @@ class PatternMatcherCompanionSpec extends FreeSpec
         }
 
         "for regression test cases" - {
-          val linearSequence = List[Transaction[Int, Int, Int]](
+          val linearSequence = Vector[Transaction[Int, Int, Int]](
             Transaction(1, 10, Set(1)),
             Transaction(1, 20, Set(2)),
             Transaction(1, 30, Set(3)),
@@ -321,7 +321,7 @@ class PatternMatcherCompanionSpec extends FreeSpec
 
       "defines ElementFinder trait that" - {
         val searchableSequence = PatternMatcher.buildSearchableSequence(
-          List[Transaction[Int, Int, Int]](
+          Vector[Transaction[Int, Int, Int]](
             Transaction(1, 10, Set(1, 2)),
             Transaction(1, 25, Set(4, 6)),
             Transaction(1, 45, Set(3)),
@@ -333,8 +333,8 @@ class PatternMatcherCompanionSpec extends FreeSpec
         val zero = MinTime(0, inclusive = true)
 
         "has SimpleElementFinder implementation which" - {
-          def withFinder(f: ElementFinder[Int, Int] => Unit): Unit =
-            f(new SimpleElementFinder[Int, Int, Int](searchableSequence))
+          def withFinder(f: ElementFinder[Int, Int, Int] => Unit): Unit =
+            f(new SimpleElementFinder[Int, Int, Int, Int](searchableSequence))
 
           "implements `find` method which" - {
             "finds only subsets of real elements" in withFinder { finder =>
@@ -378,7 +378,7 @@ class PatternMatcherCompanionSpec extends FreeSpec
           "implements `find` method which" - {
             val windowSize = 20
 
-            def withFinder(f: ElementFinder[Int, Int] => Unit): Unit =
+            def withFinder(f: ElementFinder[Int, Int, Int] => Unit): Unit =
               f(new SlidingWindowElementFinder[Int, Int, Int, Int](searchableSequence, windowSize, typeSupport))
 
             "finds subsets of real elements" in withFinder { finder =>
@@ -416,6 +416,72 @@ class PatternMatcherCompanionSpec extends FreeSpec
             }
           }
         }
+      }
+    }
+
+    "be specialized for primitive types for" - {
+      import PatternMatcher._
+
+      val searchableSequence = SearchableSequence[Int, Int, Int](
+        id = 1,
+        items = Map(1 -> Vector(1, 2, 3)),
+        firstElementTime = 1,
+        lastElementTime = 1
+      )
+      val typeSupport = GSPTypeSupport[Int, Int](
+        timeDistance = (a, b) => b - a,
+        timeSubtract = (a, b) => a - b,
+        timeAdd = (a, b) => a + b
+      )
+      val gspOptions = GSPOptions[Int, Int](
+        typeSupport = typeSupport,
+        windowSize = Some(10),
+        minGap = Some(1),
+        maxGap = Some(2)
+      )
+
+      "createSimpleElementFinder function" in {
+        val result = createSimpleElementFinder[Int, Int, Int, Int](
+          searchableSequence
+        )
+
+        result.getClass.getSuperclass shouldBe classOf[SimpleElementFinder[Any, Any, Any, Any]]
+      }
+
+      "createSlidingWindowElementFinder function" in {
+        val result = createSlidingWindowElementFinder[Int, Int, Int, Int](
+          sequence = searchableSequence,
+          windowSize = 10,
+          typeSupport = typeSupport
+        )
+
+        result.getClass.getSuperclass shouldBe classOf[SlidingWindowElementFinder[Any, Any, Any, Any]]
+      }
+
+      "createElementFinderFromOptions function given" - {
+        "SimpleElementFinder is expected" in {
+          val result = createElementFinderFromOptions[Int, Int, Int, Int](
+            gspOptions = None,
+            seq = searchableSequence
+          )
+
+          result.getClass.getSuperclass shouldBe classOf[SimpleElementFinder[Any, Any, Any, Any]]
+        }
+
+        "SlidingWindowElementFinder is expected" in {
+          val result = createElementFinderFromOptions[Int, Int, Int, Int](
+            gspOptions = Some(gspOptions),
+            seq = searchableSequence
+          )
+
+          result.getClass.getSuperclass shouldBe classOf[SlidingWindowElementFinder[Any, Any, Any, Any]]
+        }
+      }
+
+      "createApplyMinGap function" in {
+        val result = createApplyMinGap[Int, Int, Int](Some(gspOptions))
+
+        result(1).getClass.getSuperclass shouldBe classOf[MinTime[Any]]
       }
     }
   }

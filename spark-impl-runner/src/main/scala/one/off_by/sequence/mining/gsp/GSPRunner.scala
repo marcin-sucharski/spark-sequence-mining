@@ -1,7 +1,6 @@
 package one.off_by.sequence.mining.gsp
 
 import grizzled.slf4j.Logging
-import one.off_by.sequence.mining.gsp.Domain.SupportCount
 import one.off_by.sequence.mining.gsp.readers.{InputReader, SequencePerLineInputReader, TransactionCSVInputReader}
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}

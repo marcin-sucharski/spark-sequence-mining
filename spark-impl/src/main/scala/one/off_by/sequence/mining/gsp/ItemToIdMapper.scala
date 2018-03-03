@@ -1,13 +1,15 @@
 package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.Domain.SupportCount
+import one.off_by.sequence.mining.gsp.utils.{DummySpecializedValue, DummySpecializer}
 import org.apache.spark.rdd.RDD
 
 import scala.reflect.ClassTag
 
 object ItemToIdMapper {
-  def createMappings[ItemType : ClassTag, @specialized(Int, Long, Float, Double) TimeType, SequenceId](
-    transactions: RDD[Transaction[ItemType, TimeType, SequenceId]]
+  def createMappings[ItemType : ClassTag, @specialized(Int, Long) TimeType, SequenceId](
+    transactions: RDD[Transaction[ItemType, TimeType, SequenceId]],
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType]()
   ): RDD[(ItemType, Int)] = {
     transactions
       .flatMap(_.items)
@@ -19,9 +21,10 @@ object ItemToIdMapper {
       }
   }
 
-  def mapIn[ItemType : ClassTag, @specialized(Int, Long, Float, Double) TimeType, SequenceId](
+  def mapIn[ItemType : ClassTag, @specialized(Int, Long) TimeType, SequenceId](
     transactions: RDD[Transaction[ItemType, TimeType, SequenceId]],
-    mappings: RDD[(ItemType, Int)]
+    mappings: RDD[(ItemType, Int)],
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType]()
   ): RDD[Transaction[Int, TimeType, SequenceId]] = {
     transactions
       .zipWithUniqueId
@@ -41,15 +44,16 @@ object ItemToIdMapper {
   }
 
 
-  def mapOut[ItemType : ClassTag, @specialized(Int, Long, Float, Double) TimeType, SequenceId](
+  def mapOut[ItemType : ClassTag, @specialized(Int, Long) TimeType, SequenceId](
     patterns: RDD[(Pattern[Int], SupportCount)],
-    mappings: RDD[(ItemType, Int)]
+    mappings: RDD[(ItemType, Int)],
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType]()
   ): RDD[(Pattern[ItemType], SupportCount)] = {
     val reverseMappings = mappings map { case (item, id) => (id, item) }
 
     patterns
       .zipWithUniqueId
-      .flatMap { case ((pattern, support), id) =>
+      .flatMap { case ((pattern, support: SupportCount), id) =>
         pattern.elements
           .zipWithIndex
           .flatMap { case (element, index) =>

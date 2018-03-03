@@ -9,8 +9,9 @@ import scala.language.postfixOps
 import scala.reflect.ClassTag
 
 case class GSPOptions[
-@specialized(Int, Long, Float, Double) TimeType,
-@specialized(Int, Long, Float, Double) DurationType](
+@specialized(Int, Long) TimeType,
+@specialized(Int, Long) DurationType
+](
   typeSupport: GSPTypeSupport[TimeType, DurationType],
   windowSize: Option[DurationType] = None,
   minGap: Option[DurationType] = None,
@@ -18,18 +19,20 @@ case class GSPOptions[
 )
 
 case class GSPTypeSupport[
-@specialized(Int, Long, Float, Double) TimeType,
-@specialized(Int, Long, Float, Double) DurationType](
+@specialized(Int, Long) TimeType,
+@specialized(Int, Long) DurationType
+](
   timeDistance: (TimeType, TimeType) => DurationType,
   timeSubtract: (TimeType, DurationType) => TimeType,
   timeAdd: (TimeType, DurationType) => TimeType
 )(implicit val durationOrdering: Ordering[DurationType])
 
 class GSP[
-@specialized(Int, Long, Float, Double) ItemType: ClassTag,
-@specialized(Int, Long, Float, Double) DurationType,
-@specialized(Int, Long, Float, Double) TimeType,
-SequenceId: ClassTag](
+@specialized(Int, Long) ItemType: ClassTag,
+@specialized(Int, Long) DurationType,
+@specialized(Int, Long) TimeType: ClassTag,
+SequenceId: ClassTag
+](
   sc: SparkContext
 )(
   implicit

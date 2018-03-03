@@ -5,8 +5,8 @@ import scala.language.postfixOps
 
 private[gsp] sealed trait HashTree[
 ItemType,
-@specialized(Int, Long, Float, Double) TimeType,
-@specialized(Int, Long, Float, Double) DurationType,
+@specialized(Int, Long) TimeType,
+@specialized(Int, Long) DurationType,
 SequenceId] {
   type SelfType = HashTree[ItemType, TimeType, DurationType, SequenceId]
   type TransactionType = Transaction[ItemType, TimeType, SequenceId]
@@ -31,8 +31,8 @@ SequenceId] {
 
 private[gsp] final case class HashTreeNode[
 ItemType: Ordering,
-@specialized(Int, Long, Float, Double) TimeType: Ordering,
-@specialized(Int, Long, Float, Double) DurationType,
+@specialized(Int, Long) TimeType: Ordering,
+@specialized(Int, Long) DurationType,
 SequenceId](
   depth: Int,
   children: Map[Int, HashTree[ItemType, TimeType, DurationType, SequenceId]]
@@ -128,8 +128,8 @@ SequenceId](
 
 private final class ItemWithSequenceIterator[
 ItemType,
-@specialized(Int, Long, Float, Double) TimeType: Ordering,
-@specialized(Int, Long, Float, Double) DurationType
+@specialized(Int, Long) TimeType: Ordering,
+@specialized(Int, Long) DurationType
 ](
   private[this] var current: List[(TimeType, ItemType)],
   maybeOptions: Option[GSPOptions[TimeType, DurationType]]
@@ -163,8 +163,8 @@ ItemType,
 
 private[gsp] final case class HashTreeLeaf[
 ItemType: Ordering,
-@specialized(Int, Long, Float, Double) TimeType: Ordering,
-@specialized(Int, Long, Float, Double) DurationType,
+@specialized(Int, Long) TimeType: Ordering,
+@specialized(Int, Long) DurationType,
 SequenceId](
   depth: Int = 0,
   items: Vector[Pattern[ItemType]] = Vector()

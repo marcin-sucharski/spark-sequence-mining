@@ -1,23 +1,24 @@
 package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
-import one.off_by.sequence.mining.gsp.utils.LoggingUtils
+import one.off_by.sequence.mining.gsp.utils.{DummySpecializedValue, DummySpecializer, LoggingUtils}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.util.LongAccumulator
 import org.apache.spark.{Partitioner, SparkContext}
 
 import scala.annotation.tailrec
-import scala.collection.Searching
+import scala.collection.{Searching, mutable}
 import scala.collection.immutable.HashMap
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 
 private[gsp] class PatternMatcher[
-ItemType: Ordering,
-@specialized(Int, Long, Float, Double) TimeType,
-@specialized(Int, Long, Float, Double) DurationType,
-SequenceId: ClassTag](
+@specialized(Int, Long) ItemType: Ordering,
+@specialized(Int, Long) TimeType: ClassTag,
+@specialized(Int, Long) DurationType,
+SequenceId: ClassTag
+](
   sc: SparkContext,
   partitioner: Partitioner,
   sequences: RDD[(SequenceId, Transaction[ItemType, TimeType, SequenceId])],
@@ -28,13 +29,18 @@ SequenceId: ClassTag](
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
   type SupportCount = Int
 
-  private[gsp] val searchableSequences: Broadcast[Array[(Iterable[TransactionType], SearchableSequenceType)]] = {
-    implicit val localOrdering: Ordering[TimeType] = timeOrdering
+  private[gsp] val searchableSequences: Broadcast[Array[(Vector[TransactionType], SearchableSequenceType)]] = {
+    val localClassTag: ClassTag[TimeType] = implicitly[ClassTag[TimeType]]
+    val localOrdering: Ordering[TimeType] = timeOrdering
     sc.broadcast {
       sequences.groupByKey()
         .values
+        .map(_.toVector)
         .map { sequence =>
-          (sequence, PatternMatcher.buildSearchableSequence(sequence)(localOrdering))
+          (sequence, PatternMatcher.buildSearchableSequence(sequence)(
+            localClassTag,
+            localOrdering
+          ))
         }
         .collect()
     }
@@ -45,7 +51,10 @@ SequenceId: ClassTag](
 
   def filter(
     in: RDD[Pattern[ItemType]],
-    maybeCandidateCountAccumulator: Option[LongAccumulator] = None
+    maybeCandidateCountAccumulator: Option[LongAccumulator] = None,
+    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
   ): RDD[(Pattern[ItemType], SupportCount)] = {
     val searchableSequencesBV = searchableSequences
     val timeOrderingLocal = timeOrdering
@@ -80,11 +89,14 @@ SequenceId: ClassTag](
   }
 }
 
-private[gsp] object PatternMatcher {
-  type OrderedItemOccurrenceList[TimeType] =
-    IndexedSeq[TimeType]
+object PatternMatcher {
+  type OrderedItemOccurrenceList[TimeType] = IndexedSeq[TimeType]
 
-  case class SearchableSequence[ItemType, TimeType, SequenceId](
+  case class SearchableSequence[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  SequenceId
+  ](
     id: SequenceId,
     items: Map[ItemType, OrderedItemOccurrenceList[TimeType]],
 
@@ -109,7 +121,7 @@ private[gsp] object PatternMatcher {
         orderedItemsOfType.search(time) match {
           case Found(_)              => Some(time)
           case InsertionPoint(index) =>
-            if (index >= orderedItemsOfType.size) None
+            if (index >= orderedItemsOfType.length) None
             else Some(orderedItemsOfType(index))
         }
       }
@@ -128,7 +140,7 @@ private[gsp] object PatternMatcher {
       time: TimeType
     )(implicit timeOrdering: Ordering[TimeType]): Option[TimeType] = {
       assert(sequence.nonEmpty)
-      val idx = (sequence.size - 1) / 2
+      val idx = (sequence.length - 1) / 2
       sequence(idx) match {
         case value if timeOrdering.equiv(value, time) =>
           sequence.lift(idx + 1)
@@ -138,26 +150,35 @@ private[gsp] object PatternMatcher {
           else findFirstAfter(sequence.take(idx + 1), time)
 
         case value if timeOrdering.lt(value, time) =>
-          if (sequence.size == 1) None
+          if (sequence.length == 1) None
           else findFirstAfter(sequence.drop(idx + 1), time)
       }
     }
   }
 
-  def buildSearchableSequence[ItemType, TimeType, SequenceId](
-    sequence: Iterable[Transaction[ItemType, TimeType, SequenceId]]
+  def buildSearchableSequence[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType: ClassTag,
+  SequenceId
+  ](
+    sequence: Vector[Transaction[ItemType, TimeType, SequenceId]]
   )(implicit timeOrdering: Ordering[TimeType]): SearchableSequence[ItemType, TimeType, SequenceId] = {
     assume(sequence.nonEmpty)
     assume(sequence.forall(_.items.nonEmpty))
 
     val groupedNotSorted = (HashMap[ItemType, Vector[TimeType]]() /: sequence) { case (hashMap, transaction) =>
+      val transactionTime: TimeType = transaction.time
       (hashMap /: transaction.items) { case (hashMapLocal, item) =>
         val occurrences = hashMapLocal.getOrElse(item, Vector[TimeType]())
-        hashMapLocal.updated(item, occurrences :+ transaction.time)
+        hashMapLocal.updated(item, occurrences :+ transactionTime)
       }
     }
     val items = groupedNotSorted
-      .mapValues(_.sorted.toIndexedSeq)
+      .mapValues { occurences =>
+        val array = new Array[TimeType](occurences.size)
+        occurences.sorted.copyToArray(array)
+        mutable.WrappedArray.make[TimeType](array)
+      }
       .map(identity) // https://issues.scala-lang.org/browse/SI-7005
 
     SearchableSequence[ItemType, TimeType, SequenceId](
@@ -168,46 +189,35 @@ private[gsp] object PatternMatcher {
     )
   }
 
-  case class MinTime[TimeType](
-    time: TimeType,
-    inclusive: Boolean
-  )
-
-  def matches[ItemType, TimeType, DurationType, SequenceId](
+  def matches[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  @specialized(Int, Long) DurationType,
+  SequenceId
+  ](
     pattern: Pattern[ItemType],
     seq: SearchableSequence[ItemType, TimeType, SequenceId],
-    gspOptions: Option[GSPOptions[TimeType, DurationType]]
+    gspOptions: Option[GSPOptions[TimeType, DurationType]],
+    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
   )(implicit timeOrdering: Ordering[TimeType]): Boolean = {
     assume(seq.items.forall(_._2.nonEmpty))
     assume(seq.items.nonEmpty)
 
-    sealed trait PatternExtendResult
-    final case object PatternExtendSuccess extends PatternExtendResult
-    final case class PatternExtendBacktrace(minTime: MinTime[TimeType]) extends PatternExtendResult
-    final case object PatternExtendFailure extends PatternExtendResult
+    val elementFinder: ElementFinder[ItemType, TimeType, DurationType] =
+      createElementFinderFromOptions[ItemType, TimeType, DurationType, SequenceId](gspOptions, seq)(timeOrdering)
 
-    val elementFinder: ElementFinder[ItemType, TimeType] = gspOptions collect {
-      case GSPOptions(typeSupport, Some(windowSize), _, _) =>
-        import typeSupport.durationOrdering
-        new SlidingWindowElementFinder[ItemType, TimeType, SequenceId, DurationType](seq, windowSize, typeSupport)
-    } getOrElse new SimpleElementFinder[ItemType, TimeType, SequenceId](seq)
+    val applyMinGap: TimeType => MinTime[TimeType] =
+      createApplyMinGap[TimeType, SequenceId, DurationType](gspOptions)
 
-    val applyMinGap: TimeType => MinTime[TimeType] = gspOptions collect {
-      case GSPOptions(typeSupport, _, Some(minGap), _) =>
-        (endTime: TimeType) => MinTime(typeSupport.timeAdd(endTime, minGap), inclusive = true)
-    } getOrElse ((endTime: TimeType) => MinTime(endTime, inclusive = false))
-
-    // returns max start time for next element
-    val applyMaxGap: TimeType => TimeType = gspOptions collect {
-      case GSPOptions(typeSupport, _, _, Some(maxGap)) =>
-        typeSupport.timeAdd(_: TimeType, maxGap)
-    } getOrElse (_ => seq.lastElementTime)
+    // returns maximum start time for next element
+    val applyMaxGap: TimeType => TimeType =
+      createApplyMaxGap[ItemType, TimeType, SequenceId, DurationType](gspOptions, seq)
 
     // returns minimum time of previous element
-    val applyMaxGapBack: TimeType => TimeType = gspOptions collect {
-      case GSPOptions(typeSupport, _, _, Some(maxGap)) =>
-        typeSupport.timeSubtract(_: TimeType, maxGap)
-    } getOrElse (_ => seq.firstElementTime)
+    val applyMaxGapBack: TimeType => TimeType =
+      createApplyMaxGapBack[ItemType, TimeType, SequenceId, DurationType](gspOptions, seq)
 
     def extend(minTime: MinTime[TimeType], maxTime: TimeType, rest: Pattern[ItemType]): PatternExtendResult =
       if (rest.elements.isEmpty) PatternExtendSuccess
@@ -219,8 +229,8 @@ private[gsp] object PatternMatcher {
 
           case Some((_, endTime)) =>
             extend(applyMinGap(endTime), applyMaxGap(endTime), Pattern(rest.elements.tail)) match {
-              case PatternExtendBacktrace(newMinTime) => extend(newMinTime, maxTime, rest)
-              case x                                  => x
+              case PatternExtendBacktrace(newMinTime: MinTime[TimeType]) => extend(newMinTime, maxTime, rest)
+              case x                                                     => x
             }
 
           case None =>
@@ -234,14 +244,40 @@ private[gsp] object PatternMatcher {
     }
   }
 
-  sealed trait ElementFinder[ItemType, TimeType] {
+  private[this] sealed trait PatternExtendResult
+  private[this] final case object PatternExtendSuccess extends PatternExtendResult
+  private[this] final case class PatternExtendBacktrace[@specialized(Int, Long) TimeType](
+    minTime: MinTime[TimeType]
+  ) extends PatternExtendResult
+  private[this] final case object PatternExtendFailure extends PatternExtendResult
+
+  final case class MinTime[@specialized(Int, Long) TimeType](
+    time: TimeType,
+    inclusive: Boolean
+  )
+
+  sealed trait ElementFinder[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  @specialized(Int, Long) DurationType
+  ] {
     type TransactionStartTime = TimeType
     type TransactionEndTime = TimeType
 
-    def find(minTime: MinTime[TimeType], element: Element[ItemType]): Option[(TransactionStartTime, TransactionEndTime)]
+    def find(
+      minTime: MinTime[TimeType],
+      element: Element[ItemType],
+      dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+      dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+      dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    ): Option[(TransactionStartTime, TransactionEndTime)]
   }
 
-  trait FindFirstHelper[ItemType, TimeType, SequenceId] {
+  trait FindFirstHelper[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  SequenceId
+  ] {
     def sequence: SearchableSequence[ItemType, TimeType, SequenceId]
 
     implicit def timeOrdering: Ordering[TimeType]
@@ -251,15 +287,23 @@ private[gsp] object PatternMatcher {
       else sequence.findFirstOccurrenceAfter(minTime.time, item)
   }
 
-  final class SimpleElementFinder[ItemType, TimeType, SequenceId](
+  final class SimpleElementFinder[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  @specialized(Int, Long) DurationType,
+  SequenceId
+  ](
     val sequence: SearchableSequence[ItemType, TimeType, SequenceId]
-  )(implicit val timeOrdering: Ordering[TimeType]) extends ElementFinder[ItemType, TimeType]
+  )(implicit val timeOrdering: Ordering[TimeType]) extends ElementFinder[ItemType, TimeType, DurationType]
     with FindFirstHelper[ItemType, TimeType, SequenceId] {
 
     @tailrec
     override def find(
       minTime: MinTime[TimeType],
-      element: Element[ItemType]
+      element: Element[ItemType],
+      dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+      dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+      dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
     ): Option[(TransactionStartTime, TransactionEndTime)] =
       findFirst(minTime, element.items.head) match {
         case Some(time) =>
@@ -278,7 +322,10 @@ private[gsp] object PatternMatcher {
   }
 
   final class SlidingWindowElementFinder[
-  ItemType, TimeType, SequenceId, DurationType
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  SequenceId,
+  @specialized(Int, Long) DurationType
   ](
     val sequence: SearchableSequence[ItemType, TimeType, SequenceId],
     windowSize: DurationType,
@@ -286,7 +333,7 @@ private[gsp] object PatternMatcher {
   )(implicit
     val timeOrdering: Ordering[TimeType],
     durationOrdering: Ordering[DurationType]
-  ) extends ElementFinder[ItemType, TimeType]
+  ) extends ElementFinder[ItemType, TimeType, DurationType]
     with FindFirstHelper[ItemType, TimeType, SequenceId] {
 
     private implicit val implicitTypeSupport: GSPTypeSupport[TimeType, DurationType] = typeSupport
@@ -296,7 +343,10 @@ private[gsp] object PatternMatcher {
     @tailrec
     override def find(
       minTime: MinTime[TimeType],
-      element: Element[ItemType]
+      element: Element[ItemType],
+      dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+      dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+      dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
     ): Option[(TransactionStartTime, TransactionEndTime)] = {
       val maybeTimes = element.items.map(findFirst(minTime, _))
       if (maybeTimes.forall(_.isDefined)) {
@@ -310,4 +360,113 @@ private[gsp] object PatternMatcher {
     }
   }
 
+  def createElementFinderFromOptions[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  @specialized(Int, Long) DurationType,
+  SequenceId
+  ](
+    gspOptions: Option[GSPOptions[TimeType, DurationType]],
+    seq: SearchableSequence[ItemType, TimeType, SequenceId],
+    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+  )(implicit timeOrdering: Ordering[TimeType]): ElementFinder[ItemType, TimeType, DurationType] =
+    gspOptions match {
+      case Some(GSPOptions(typeSupport, Some(windowSize), _, _)) =>
+        import typeSupport.durationOrdering
+        createSlidingWindowElementFinder[ItemType, TimeType, SequenceId, DurationType](seq, windowSize, typeSupport)
+
+      case _ =>
+        createSimpleElementFinder[ItemType, TimeType, DurationType, SequenceId](seq)
+    }
+
+  def createApplyMinGap[
+  @specialized(Int, Long) TimeType,
+  SequenceId,
+  @specialized(Int, Long) DurationType](
+    gspOptions: Option[GSPOptions[TimeType, DurationType]],
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+  ): TimeType => MinTime[TimeType] =
+    gspOptions match {
+      case Some(GSPOptions(typeSupport, _, Some(minGap), _)) =>
+        (endTime: TimeType) => MinTime(typeSupport.timeAdd(endTime, minGap), inclusive = true)
+
+      case _ =>
+        (endTime: TimeType) => MinTime(endTime, inclusive = false)
+    }
+
+  def createApplyMaxGap[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  SequenceId,
+  @specialized(Int, Long) DurationType
+  ](
+    gspOptions: Option[GSPOptions[TimeType, DurationType]],
+    seq: SearchableSequence[ItemType, TimeType, SequenceId],
+    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+  ): TimeType => TimeType =
+    gspOptions match {
+      case Some(GSPOptions(typeSupport, _, _, Some(maxGap))) =>
+        typeSupport.timeAdd(_: TimeType, maxGap)
+
+      case _ =>
+        (_: TimeType) => seq.lastElementTime
+    }
+
+  def createApplyMaxGapBack[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  SequenceId,
+  @specialized(Int, Long) DurationType
+  ](
+    gspOptions: Option[GSPOptions[TimeType, DurationType]],
+    seq: SearchableSequence[ItemType, TimeType, SequenceId],
+    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+  ): TimeType => TimeType =
+    gspOptions match {
+      case Some(GSPOptions(typeSupport, _, _, Some(maxGap))) =>
+        typeSupport.timeSubtract(_: TimeType, maxGap)
+
+      case _ =>
+        (_: TimeType) => seq.firstElementTime
+    }
+
+  def createSlidingWindowElementFinder[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  SequenceId,
+  @specialized(Int, Long) DurationType
+  ](
+    sequence: SearchableSequence[ItemType, TimeType, SequenceId],
+    windowSize: DurationType,
+    typeSupport: GSPTypeSupport[TimeType, DurationType],
+    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+  )(implicit
+    timeOrdering: Ordering[TimeType],
+    durationOrdering: Ordering[DurationType]
+  ): SlidingWindowElementFinder[ItemType, TimeType, SequenceId, DurationType] =
+    new SlidingWindowElementFinder[ItemType, TimeType, SequenceId, DurationType](sequence, windowSize, typeSupport)
+
+  def createSimpleElementFinder[
+  @specialized(Int, Long) ItemType,
+  @specialized(Int, Long) TimeType,
+  @specialized(Int, Long) DurationType,
+  SequenceId
+  ](
+    sequence: SearchableSequence[ItemType, TimeType, SequenceId],
+    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
+    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
+    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+  )(implicit
+    timeOrdering: Ordering[TimeType]
+  ): SimpleElementFinder[ItemType, TimeType, DurationType, SequenceId] =
+    new SimpleElementFinder[ItemType, TimeType, DurationType, SequenceId](sequence)
 }
