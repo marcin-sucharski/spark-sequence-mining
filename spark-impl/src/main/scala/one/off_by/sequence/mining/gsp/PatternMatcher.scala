@@ -29,13 +29,16 @@ SequenceId: ClassTag
   type SearchableSequenceType = SearchableSequence[ItemType, TimeType, SequenceId]
   type SupportCount = Int
 
-  private[gsp] val searchableSequences: Broadcast[Array[(Vector[TransactionType], SearchableSequenceType)]] = {
+  private[gsp] val searchableSequences:
+    Broadcast[Array[(mutable.WrappedArray[TransactionType], SearchableSequenceType)]] = {
+
     val localClassTag: ClassTag[TimeType] = implicitly[ClassTag[TimeType]]
     val localOrdering: Ordering[TimeType] = timeOrdering
     sc.broadcast {
       sequences.groupByKey()
         .values
-        .map(_.toVector)
+        .map(_.toArray)
+        .map(mutable.WrappedArray.make[TransactionType](_))
         .map { sequence =>
           (sequence, PatternMatcher.buildSearchableSequence(sequence)(
             localClassTag,
@@ -161,7 +164,7 @@ object PatternMatcher {
   @specialized(Int, Long) TimeType: ClassTag,
   SequenceId
   ](
-    sequence: Vector[Transaction[ItemType, TimeType, SequenceId]]
+    sequence: IndexedSeq[Transaction[ItemType, TimeType, SequenceId]]
   )(implicit timeOrdering: Ordering[TimeType]): SearchableSequence[ItemType, TimeType, SequenceId] = {
     assume(sequence.nonEmpty)
     assume(sequence.forall(_.items.nonEmpty))
