@@ -53,19 +53,26 @@ SequenceId: ClassTag
     transactions: RDD[TransactionType],
     minSupport: Percent,
     minItemsInPattern: Long = 1L,
-    maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None
+    maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None,
+    statisticsGatherer: Option[StatisticsGatherer] = None
   ): RDD[(Pattern[ItemType], SupportCount)] = {
     def maybeFilterOut(itemsCount: Long, result: RDD[(Pattern[ItemType], SupportCount)]) =
       if (itemsCount >= minItemsInPattern) result
       else sc.parallelize(List.empty[(Pattern[ItemType], SupportCount)])
 
+    val transactionCount = sc.longAccumulator
     val sequences: RDD[(SequenceId, TransactionType)] = transactions
-      .map(t => (t.sequenceId, t))
+      .map { t =>
+        transactionCount.add(1)
+        (t.sequenceId, t)
+      }
       .partitionBy(partitioner)
       .cache()
 
     val sequenceCount = sequences.keys.distinct.count()
     val minSupportCount = (sequenceCount * minSupport).toInt
+    statisticsGatherer.foreach(_.saveTransactionCount(transactionCount.value.toInt))
+    statisticsGatherer.foreach(_.saveSequenceCount(sequenceCount.toInt))
     logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount.")
 
     val patternMatcher = createPatternMatcher(maybeOptions, sequences, minSupportCount)
@@ -85,6 +92,9 @@ SequenceId: ClassTag
       val candidateCount = sc.longAccumulator
       val phaseResult = patternMatcher.filter(candidates, Some(candidateCount))
         .persist(StorageLevels.MEMORY_AND_DISK_SER)
+      statisticsGatherer.foreach {
+        _.saveNextPhaseStatistics(phaseResult.count().toInt, candidateCount.value.toInt)
+      }
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       logger.info(s"There was approximately ${candidateCount.value} candidates.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)

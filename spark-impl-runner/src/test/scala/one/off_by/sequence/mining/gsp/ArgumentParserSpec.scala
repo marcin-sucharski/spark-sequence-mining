@@ -29,7 +29,8 @@ class ArgumentParserSpec
           "--min-items-in-pattern", "5",
           "--window-size", "4",
           "--min-gap", "2",
-          "--max-gap", "6"
+          "--max-gap", "6",
+          "--statistics-output", "path/to/file.json"
         )
 
         val result = ArgumentParser.parseArguments(args)
@@ -41,7 +42,8 @@ class ArgumentParserSpec
           minItemsInPattern = 5,
           windowSize = Some(4),
           minGap = Some(2),
-          maxGap = Some(6)
+          maxGap = Some(6),
+          statisticsOutput = Some("path/to/file.json")
         )
       }
 
@@ -140,7 +142,8 @@ class ArgumentParserSpec
           minItemsInPattern = 1,
           windowSize = Some(2),
           minGap = Some(1),
-          maxGap = Some(2)
+          maxGap = Some(2),
+          statisticsOutput = None
         )
 
         val result = args.toOptions.value
@@ -158,7 +161,8 @@ class ArgumentParserSpec
           minItemsInPattern = 1,
           windowSize = None,
           minGap = None,
-          maxGap = None
+          maxGap = None,
+          statisticsOutput = None
         )
 
         args.toOptions shouldNot be (defined)
@@ -172,7 +176,8 @@ class ArgumentParserSpec
           minItemsInPattern = 1,
           windowSize = Some(2),
           minGap = Some(1),
-          maxGap = Some(2)
+          maxGap = Some(2),
+          statisticsOutput = None
         )
 
         val result = args.toOptions.value.typeSupport

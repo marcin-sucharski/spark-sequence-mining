@@ -9,7 +9,8 @@ final case class GSPArguments(
   minItemsInPattern: Int,
   windowSize: Option[Int],
   minGap: Option[Int],
-  maxGap: Option[Int]
+  maxGap: Option[Int],
+  statisticsOutput: Option[String]
 ) {
   def toOptions: Option[GSPOptions[Int, Int]] = {
     val intTypeSupport: GSPTypeSupport[Int, Int] = GSPTypeSupport[Int, Int](
@@ -37,7 +38,8 @@ object ArgumentParser {
       minItemsInPattern = builder.minItemsInPattern.getOrElse(1),
       windowSize = builder.windowSize,
       minGap = builder.minGap,
-      maxGap = builder.maxGap
+      maxGap = builder.maxGap,
+      statisticsOutput = builder.statisticsOutput
     )
 
     def check(message: String)(condition: => Boolean): Unit =
@@ -87,6 +89,10 @@ object ArgumentParser {
       GSPArgumentsBuilder(maxGap = Some(wrapException("max-gap", value.toInt)))
         .overrideWith(parseDown(rest))
 
+    case "--statistics-output" :: value :: rest =>
+      GSPArgumentsBuilder(statisticsOutput = Some(value))
+        .overrideWith(parseDown(rest))
+
     case Nil =>
       GSPArgumentsBuilder()
 
@@ -107,7 +113,8 @@ object ArgumentParser {
     minItemsInPattern: Option[Int] = None,
     windowSize: Option[Int] = None,
     minGap: Option[Int] = None,
-    maxGap: Option[Int] = None
+    maxGap: Option[Int] = None,
+    statisticsOutput: Option[String] = None
   ) {
     def overrideWith(other: GSPArgumentsBuilder): GSPArgumentsBuilder =
       GSPArgumentsBuilder(
@@ -117,7 +124,8 @@ object ArgumentParser {
         minItemsInPattern = other.minItemsInPattern.orElse(minItemsInPattern),
         windowSize = other.windowSize.orElse(windowSize),
         minGap = other.minGap.orElse(minGap),
-        maxGap = other.maxGap.orElse(maxGap)
+        maxGap = other.maxGap.orElse(maxGap),
+        statisticsOutput = other.statisticsOutput.orElse(statisticsOutput)
       )
   }
 
