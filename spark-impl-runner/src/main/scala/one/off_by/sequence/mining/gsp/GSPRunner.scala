@@ -52,7 +52,7 @@ class GSPRunner(
         statistics <- maybeStatistics
         writer <- Some(new PrintWriter(new File(pathToStatisticsOutput)))
       } {
-        try writer.write(StatisticsSerializer.serializerToJson(statistics, totalTimeMillis))
+        try writer.write(StatisticsSerializer.serializerToJson(statistics, args, totalTimeMillis))
         finally writer.close()
       }
     } catch {
