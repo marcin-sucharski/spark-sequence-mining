@@ -25,7 +25,6 @@ SequenceId] {
 
   protected[gsp] def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    first: (TimeType, ItemType),
     sequence: List[(TimeType, ItemType)]): Iterator[PatternType]
 }
 
@@ -54,7 +53,7 @@ SequenceId](
     import one.off_by.sequence.mining.gsp.utils.CollectionDistinctUtils._
 
     val inputSequence = sequence.toList.flatMap(t => t.items.toList.sorted.map(x => (t.time, x)))
-    findPossiblePatternsInternal(gspOptions, inputSequence.head, inputSequence)
+    findPossiblePatternsInternal(gspOptions, inputSequence)
       .distinct
   }
 
@@ -80,7 +79,6 @@ SequenceId](
 
   protected[gsp] override def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    first: (TimeType, ItemType),
     sequence: List[(TimeType, ItemType)]): Iterator[PatternType] = {
     (if (depth == 0) {
       new ItemWithSequenceIterator(sequence, gspOptions)
@@ -92,7 +90,7 @@ SequenceId](
       }
     }) flatMap { case (item, rest) =>
       children.get(getHash(item._2)).fold(Iterator.empty: Iterator[PatternType]) { node =>
-        node.findPossiblePatternsInternal(gspOptions, item, rest)
+        node.findPossiblePatternsInternal(gspOptions, rest)
       }
     }
   }
@@ -199,7 +197,6 @@ SequenceId](
 
   protected[gsp] override def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    first: (TimeType, ItemType),
     sequence: List[(TimeType, ItemType)]): Iterator[PatternType] = items.iterator
 }
 
