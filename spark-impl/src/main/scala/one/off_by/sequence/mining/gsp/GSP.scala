@@ -98,7 +98,7 @@ SequenceId: ClassTag
       logger.info(s"Got ${phaseResult.count()} patterns as result.")
       logger.info(s"There was approximately ${candidateCount.value} candidates.")
       State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
-    } takeWhile (!_.lastPattern.isEmpty()) lastOption
+    } takeWhile (!_.lastPatterns.isEmpty()) lastOption
 
     result.map(_.result).getOrElse(sc.parallelize(Nil))
   }
@@ -113,7 +113,7 @@ SequenceId: ClassTag
 
   private case class State(
     result: RDD[(Pattern[ItemType], SupportCount)],
-    lastPattern: RDD[(Pattern[ItemType], SupportCount)],
+    lastPatterns: RDD[(Pattern[ItemType], SupportCount)],
     itemsCount: Long
   )
 
