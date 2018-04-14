@@ -6,18 +6,45 @@ lazy val commonSettings = Seq(
   scalaVersion := scalaV,
   scalacOptions ++= Seq(
     "-optimize",
-    "-Yinline-warnings",
+    "-Yinline-warnings"
+  ),
+  scalacOptions in assembly ++= Seq(
     "-Xelide-below", "3000"
+  ),
+  testOptions in ThisBuild ++= Seq(
+    Tests.Setup(_ => sys.props("testing") = "true"),
+    Tests.Cleanup(_ => sys.props.remove("testing"))
   ),
   version := (version in ThisBuild).value,
   organization := "one.off_by"
 )
 
+def testCoverage = Command.command("testCoverage") { state =>
+  state.copy(
+    remainingCommands = List(
+      Exec("clean", None),
+      Exec("coverageOn", None),
+      Exec("test", None),
+      Exec("coverageReport", None),
+      Exec("coverageOff", None)
+    ) ++ state.remainingCommands
+  )
+}
+
 lazy val root = (project in file("."))
   .settings(commonSettings ++ Seq(
     name := "spark-data-mining",
     assembly := (assembly in sparkImplRunner).value,
-    test in Test := ((test in sparkImplRunner in Test) dependsOn (test in sparkImpl in Test)).value
+    test in Test := ((test in sparkImplRunner in Test) dependsOn (test in sparkImpl in Test)).value,
+    fork in Test in ThisBuild := coverageEnabled.value,
+    javaOptions in Test in ThisBuild ++= {
+      if (coverageEnabled.value) Seq(
+        "-Dlog4j.configuration=log4j.coverage.properties",
+        "-Dtesting=true"
+      )
+      else Nil
+    },
+    commands ++= Seq(testCoverage)
   ))
   .aggregate(sparkImpl, sparkImplRunner, dataGenerator, sparkImplPerfTest)
 
@@ -48,7 +75,7 @@ lazy val sparkImplRunner = (project in file("spark-impl-runner"))
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-core" % "2.2.0" % "provided",
       "com.github.tototoshi" %% "scala-csv" % "1.3.5",
-      "io.spray" %%  "spray-json" % "1.3.3",
+      "io.spray" %% "spray-json" % "1.3.3",
 
       "org.scalatest" %% "scalatest" % "3.0.1" % Test
     ),

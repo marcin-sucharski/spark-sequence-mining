@@ -84,7 +84,8 @@ SequenceId: ClassTag
     sequences.unpersist()
 
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
-    val result = Stream.iterate(State(initialPatterns, initialPatterns, 1L)) { case State(acc, prev, prevLength) =>
+    val initialState = State(maybeFilterOut(1L, initialPatterns), initialPatterns, 1L)
+    val result = Stream.iterate(initialState) { case State(acc, prev, prevLength) =>
       val newLength = prevLength + 1
       logger.info(s"Merging patterns of size $prevLength into $newLength.")
       val candidates = patternJoiner.generateCandidates(prev.map(_._1))

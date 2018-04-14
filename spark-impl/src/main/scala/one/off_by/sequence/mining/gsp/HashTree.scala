@@ -114,14 +114,14 @@ SequenceId](
     first: TimeType,
     minGap: DurationType,
     timeAdd: (TimeType, DurationType) => TimeType): Boolean =
-    implicitly[Ordering[TimeType]].gteq(item, timeAdd(first, minGap))
+    item == first || implicitly[Ordering[TimeType]].gteq(item, timeAdd(first, minGap))
 
   private def filterMaxGap(
     item: TimeType,
     first: TimeType,
     maxGap: DurationType,
     timeAdd: (TimeType, DurationType) => TimeType): Boolean =
-    implicitly[Ordering[TimeType]].lteq(item, timeAdd(first, maxGap))
+    item == first || implicitly[Ordering[TimeType]].lteq(item, timeAdd(first, maxGap))
 }
 
 private final class ItemWithSequenceIterator[
@@ -201,15 +201,16 @@ SequenceId](
 }
 
 private object HashTreeUtils {
-  val maxLeafSize: Int = 8
+  // set leaf size to 1 in tests to easily test complex cases
+  final val maxLeafSize: Int =
+    sys.props.get("testing")
+      .filter(_ == "true")
+      .map(_ => 1)
+      .getOrElse(8)
 
   @inline
   def getLength[ItemType](pattern: Pattern[ItemType]): Int =
     pattern.elements.view.map(_.items.size).sum
-
-  @inline
-  def getItem[ItemType: Ordering](pattern: Pattern[ItemType], index: Int): ItemType =
-    pattern.elements.view.flatMap(_.items.toList.sorted).apply(index)
 
   @inline
   def getHash[ItemType](item: ItemType): Int =

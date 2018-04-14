@@ -22,6 +22,17 @@ class CollectionDistinctUtilsSpec extends FreeSpec
             collection.iterator.distinct.toVector should contain theSameElementsAs collection.distinct
           }
         }
+
+        "returns iterator which throws exception when is empty" in {
+          val size = 10000
+          val collection = ((1 to size) ++ Random.shuffle(1 to size).take(size / 3)).toVector
+
+          val iterator = collection.iterator.distinct
+          iterator.foreach(_ => ())
+
+          iterator.hasNext shouldBe false
+          an[Exception] shouldBe thrownBy { iterator.next }
+        }
       }
     }
   }

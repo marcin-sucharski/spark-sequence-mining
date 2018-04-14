@@ -22,14 +22,15 @@ class HashTreeSpec extends FreeSpec
         Pattern(Vector(Element(3), Element(4, 1, 2))),
         Pattern(Vector(Element(1, 2), Element(3, 4))),
         Pattern(Vector(Element(1, 2, 3), Element(4))),
-        Pattern(Vector(Element(1), Element(2), Element(3, 4))))
+        Pattern(Vector(Element(1), Element(2), Element(3, 4))),
+        Pattern(Vector(Element(1), Element(2, 5))))
 
       val transactions = List(
         Transaction(1, 10, Set(1)),
         Transaction(1, 15, Set(1, 2)),
         Transaction(1, 20, Set(2)),
         Transaction(1, 25, Set(2, 3, 4)),
-        Transaction(1, 30, Set(3, 4)))
+        Transaction(1, 30, Set(3, 4, 5)))
 
       val hashTreeWithPatterns = (empty /: patterns)(_ add _)
 
@@ -57,14 +58,24 @@ class HashTreeSpec extends FreeSpec
           Pattern(Vector(Element(1), Element(2), Element(3, 4))))
       }
 
+      "min gap is specified" in {
+        val options = Some(GSPOptions(typeSupport, minGap = Some(11)))
+
+        hashTreeWithPatterns.findPossiblePatterns(options, transactions).toList should contain allOf(
+          Pattern(Vector(Element(1), Element(2, 3, 4))),
+          Pattern(Vector(Element(1, 2), Element(3, 4))),
+          Pattern(Vector(Element(1), Element(2), Element(3, 4))))
+      }
+
       "window size and max gap are specified" in {
-        val options = Some(GSPOptions(typeSupport, windowSize = Some(10), maxGap = Some(5)))
+        val options = Some(GSPOptions(typeSupport, windowSize = Some(10), maxGap = Some(15)))
 
         hashTreeWithPatterns.findPossiblePatterns(options, transactions).toList should contain allOf(
           Pattern(Vector(Element(1), Element(2, 3, 4))),
           Pattern(Vector(Element(1, 2), Element(3, 4))),
           Pattern(Vector(Element(1, 2, 3), Element(4))),
-          Pattern(Vector(Element(1), Element(2), Element(3, 4)))
+          Pattern(Vector(Element(1), Element(2), Element(3, 4))),
+          Pattern(Vector(Element(1), Element(2, 5)))
         )
       }
 

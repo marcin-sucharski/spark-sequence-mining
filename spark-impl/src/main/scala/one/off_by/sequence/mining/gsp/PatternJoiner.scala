@@ -229,9 +229,6 @@ private[gsp] object PatternJoiner {
     def :+(element: Element[ItemType]): Pattern[ItemType] =
       Pattern(pattern.elements :+ element)
 
-    def append(element: Element[ItemType]): Pattern[ItemType] =
-      this :+ element
-
     def prepend(element: Element[ItemType]): Pattern[ItemType] =
       Pattern(element +: pattern.elements)
   }

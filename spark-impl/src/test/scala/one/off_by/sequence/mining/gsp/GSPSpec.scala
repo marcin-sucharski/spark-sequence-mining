@@ -18,6 +18,15 @@ class GSPSpec extends WordSpec
         Transaction("C2", 20, Set("Foundation and Empire")),
         Transaction("C2", 50, Set("Ringworld Engineers")))
 
+      "works with empty input" in {
+        val gsp = new GSP[String, Int, Int, String](sc)
+        val input = sc.parallelize[Transaction[String, Int, String]](Nil)
+
+        val result = gsp.execute(input, minSupport = 0.0).collect()
+
+        result should be(empty)
+      }
+
       "works with example data" in {
         val gsp = new GSP[String, Int, Int, String](sc)
         val input = sc.parallelize(inputData)
@@ -28,6 +37,17 @@ class GSPSpec extends WordSpec
           Pattern(Vector(Element("Ringworld"))),
           Pattern(Vector(Element("Foundation"))),
           Pattern(Vector(Element("Ringworld Engineers"))),
+          Pattern(Vector(Element("Ringworld"), Element("Ringworld Engineers"))),
+          Pattern(Vector(Element("Foundation"), Element("Ringworld Engineers"))))
+      }
+
+      "allows to specify minimum number of items in pattern" in {
+        val gsp = new GSP[String, Int, Int, String](sc)
+        val input = sc.parallelize(inputData)
+
+        val result = gsp.execute(input, 1.0, minItemsInPattern = 2L).collect()
+
+        result.map(_._1) should contain theSameElementsAs List(
           Pattern(Vector(Element("Ringworld"), Element("Ringworld Engineers"))),
           Pattern(Vector(Element("Foundation"), Element("Ringworld Engineers"))))
       }
@@ -142,6 +162,25 @@ class GSPSpec extends WordSpec
         ) foreach { p =>
           patterns should contain (p)
         }
+      }
+
+      "have support for gathering statistics" in {
+        val gsp = new GSP[String, Int, Int, String](sc)
+        val input = sc.parallelize(inputData)
+
+        val statisticsGatherer = SimpleStatisticsGatherer()
+        val result = gsp.execute(input, 1.0, statisticsGatherer = Some(statisticsGatherer)).collect()
+
+        result.map(_._1) should contain theSameElementsAs List(
+          Pattern(Vector(Element("Ringworld"))),
+          Pattern(Vector(Element("Foundation"))),
+          Pattern(Vector(Element("Ringworld Engineers"))),
+          Pattern(Vector(Element("Ringworld"), Element("Ringworld Engineers"))),
+          Pattern(Vector(Element("Foundation"), Element("Ringworld Engineers"))))
+
+        statisticsGatherer.transactionCount shouldBe inputData.size
+        statisticsGatherer.sequenceCount shouldBe inputData.map(_.sequenceId).distinct.size
+        statisticsGatherer.phases shouldBe 'nonEmpty
       }
     }
 
