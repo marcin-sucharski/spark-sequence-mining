@@ -39,7 +39,7 @@ SequenceId](
 
   import HashTreeUtils._
 
-  override def add(pattern: PatternType): HashTree[ItemType, TimeType, DurationType, SequenceId] =
+  override def add(pattern: PatternType): SelfType =
     addInternal(pattern, pattern.elements.flatMap(_.items.toList.sorted))
 
   override def findPossiblePatterns(
@@ -60,7 +60,7 @@ SequenceId](
   protected[gsp] override def addInternal(
     pattern: PatternType,
     iterable: Iterable[ItemType]
-  ): HashTree[ItemType, TimeType, DurationType, SequenceId] = {
+  ): SelfType = {
     val hash = getHash(iterable.head)
     children.get(hash) match {
       case Some(node) =>
@@ -170,7 +170,7 @@ SequenceId](
 
   import HashTreeUtils._
 
-  override def add(pattern: PatternType): HashTree[ItemType, TimeType, DurationType, SequenceId] =
+  override def add(pattern: PatternType): SelfType =
     if (items.length < maxLeafSize || getLength(pattern) == depth)
       HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](depth, pattern +: items)
     else {
@@ -193,7 +193,7 @@ SequenceId](
   protected[gsp] override def addInternal(
     pattern: PatternType,
     iterable: Iterable[ItemType]
-  ): HashTree[ItemType, TimeType, DurationType, SequenceId] = add(pattern)
+  ): SelfType = add(pattern)
 
   protected[gsp] override def findPossiblePatternsInternal(
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
