@@ -16,13 +16,13 @@ class CollectionDistinctUtilsTest {
 
     input = (inputMode match {
       case "noDuplicates" =>
-        (1 to 1000).toVector
+        1 to 1000
 
       case "minorDuplicates" =>
-        (1 to 900).toVector ++ Random.shuffle(1 to 900).take(100).toVector
+        (1 to 900) ++ Random.shuffle(1 to 900).take(100)
 
       case "manyDuplicates" =>
-        (1 to 500).toVector ++ (1 to 500).toVector
+        (1 to 500) ++ (1 to 500)
 
       case _ =>
         sys.error("incorrect inputMode")
@@ -31,18 +31,25 @@ class CollectionDistinctUtilsTest {
     input = Random.shuffle(input)
   }
 
-  var input: Vector[TestItem] = _
+  var input: Iterable[TestItem] = _
+
+  def inputIter: Iterator[TestItem] = input.iterator
 
   @Benchmark
   def measureDistinctCalculationCustom(bh: Blackhole): Any = {
     import one.off_by.sequence.mining.gsp.utils.CollectionDistinctUtils._
 
-    input.distinct.foreach(bh.consume(_: Object))
+    inputIter.distinct.foreach(bh.consume(_: Object))
   }
 
   @Benchmark
-  def measureDistinctCalculationStdlib(bh: Blackhole): Any = {
-    input.toSet.toIterator.foreach(bh.consume(_: Object))
+  def measureDistinctCalculationStdlibSet(bh: Blackhole): Any = {
+    inputIter.toSet.toIterator.foreach(bh.consume(_: Object))
+  }
+
+  @Benchmark
+  def measureDistinctCalculationStdlibVector(bh: Blackhole): Any = {
+    inputIter.toVector.distinct.toIterator.foreach(bh.consume(_: Object))
   }
 }
 
