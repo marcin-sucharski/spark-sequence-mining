@@ -33,15 +33,20 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
           true
 
         case (JoinItemExistingElement(suffixItem), JoinItemNewElement(_)) =>
-          !common.lastOption.exists(_.items contains suffixItem)
+          val newItemIsAlreadyInLastElement = common.lastOption.exists(_.items contains suffixItem)
+          !newItemIsAlreadyInLastElement
 
         case (JoinItemNewElement(_), JoinItemExistingElement(prefixItem)) =>
-          !common.headOption.exists(_.items contains prefixItem)
+          val newItemIsAlreadyInFirstElement = common.headOption.exists(_.items contains prefixItem)
+          !newItemIsAlreadyInFirstElement
 
         case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
-          common.headOption.exists(!_.items.contains(prefixItem)) &&
-            common.lastOption.exists(!_.items.contains(suffixItem)) &&
-            (common.length > 1 || prefixItem != suffixItem)
+          val newItemIsNotInFirstElement = common.headOption.exists(!_.items.contains(prefixItem))
+          val newItemIsNotInLastElement = common.lastOption.exists(!_.items.contains(suffixItem))
+          val newItemsAreNotEquivalent = common.length > 1 || prefixItem != suffixItem
+
+          newItemIsNotInFirstElement && newItemIsNotInLastElement &&
+            newItemsAreNotEquivalent
       }
     }
 
