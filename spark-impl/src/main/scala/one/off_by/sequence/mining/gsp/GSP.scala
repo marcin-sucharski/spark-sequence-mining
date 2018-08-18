@@ -47,8 +47,6 @@ SequenceId: ClassTag
   private[gsp] val partitioner: Partitioner =
     new HashPartitioner(sc.getConf.getInt("spark.default.parallelism", 2))
 
-  private val patternJoiner = new PatternJoiner[ItemType](partitioner)
-
   type ItemCount = Long
   type PatternsWithSupport = RDD[(Pattern[ItemType], SupportCount)]
 
@@ -78,6 +76,7 @@ SequenceId: ClassTag
     statisticsGatherer.foreach(_.saveSequenceCount(sequenceCount.toInt))
     logger.info(s"Total sequences: $sequenceCount. Minimum support: $minSupportCount.")
 
+    val patternJoiner = new PatternJoiner[ItemType](partitioner, maybeOptions)
     val patternMatcher = createPatternMatcher(maybeOptions, sequences, minSupportCount)
 
     val initialPatterns = prepareInitialPatterns(sequences, minSupportCount)
@@ -89,7 +88,7 @@ SequenceId: ClassTag
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
     val initialState = State(filterMinItems(1L, initialPatterns), initialPatterns, 1L)
     val result = Stream.iterate(initialState)(
-      buildLongerPatterns(statisticsGatherer, filterMinItems, patternMatcher)
+      buildLongerPatterns(statisticsGatherer, patternJoiner, filterMinItems, patternMatcher)
     ) takeWhile (!_.lastPatterns.isEmpty()) lastOption
 
     result.map(_.result).getOrElse(sc.parallelize(Nil))
@@ -97,6 +96,7 @@ SequenceId: ClassTag
 
   private def buildLongerPatterns(
     statisticsGatherer: Option[StatisticsGatherer],
+    patternJoiner: PatternJoiner[ItemType],
     filterMinItems: (ItemCount, PatternsWithSupport) => PatternsWithSupport,
     patternMatcher: PatternMatcher[ItemType, TimeType, DurationType, SequenceId]
   )(state: State) = {

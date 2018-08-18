@@ -50,6 +50,32 @@ class PatternJoinerSpec extends WordSpec
 
         result should contain theSameElementsAs afterPruningPatterns
       }
+
+      "generate correct candidates with defined max gap and window size" in {
+        val gspOptions = GSPOptions(
+          typeSupport = GSPTypeSupport[Int, Int](
+            timeDistance = (a, b) => b - a,
+            timeSubtract = (a, b) => a - b,
+            timeAdd = (a, b) => a + b
+          ),
+          windowSize = Some(10),
+          maxGap = Some(10)
+        )
+
+        val joiner = new PatternJoiner[Int](partitioner, Some(gspOptions))
+        // because of time constraints it is possible that <(1)(3)(4)> won't be frequent pattern
+        val source = sc.parallelize(List(
+          Pattern(Vector(Element(1), Element(2, 3))),
+          Pattern(Vector(Element(2, 3), Element(4))),
+          Pattern(Vector(Element(1), Element(2), Element(4)))
+        ))
+
+        val result = joiner.generateCandidates(source).collect()
+
+        result should contain theSameElementsAs List(
+          Pattern(Vector(Element(1), Element(2, 3), Element(4)))
+        )
+      }
     }
 
     "have internal `joinPatterns` method" which {
@@ -128,7 +154,7 @@ class PatternJoinerSpec extends WordSpec
   private val partitioner: Partitioner = new HashPartitioner(4)
 
   private def withPatternJoiner[ItemType: Ordering](f: PatternJoiner[ItemType] => Unit): Unit = {
-    f(new PatternJoiner[ItemType](partitioner))
+    f(new PatternJoiner[ItemType](partitioner, None))
   }
 }
 

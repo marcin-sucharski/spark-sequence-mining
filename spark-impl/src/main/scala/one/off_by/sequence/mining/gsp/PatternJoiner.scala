@@ -5,7 +5,8 @@ import org.apache.spark.Partitioner
 import org.apache.spark.rdd.RDD
 
 private[gsp] class PatternJoiner[ItemType: Ordering](
-  partitioner: Partitioner
+  partitioner: Partitioner,
+  gspOptions: Option[GSPOptions[_, _]]
 ) extends LoggingUtils {
 
   import PatternJoiner._
@@ -83,8 +84,10 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
     logger.trace(s"Pruning matches: ${matches.collect().mkString("\n", "\n", "\n")}")
 
     val isFirst = source.take(1).head.elements.map(_.items.size).sum == 1
+    val hasDefinedWindowSizeAndMaxGap = gspOptions
+      .exists(options => options.windowSize.isDefined && options.maxGap.isDefined)
 
-    if (isFirst) matches
+    if (isFirst || hasDefinedWindowSizeAndMaxGap) matches
     else pruneMatchesForPatternsLongerThanTwoItems(matches, source)
   }
 
