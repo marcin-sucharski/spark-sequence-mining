@@ -1,7 +1,7 @@
 package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.Domain.SupportCount
-import one.off_by.sequence.mining.gsp.utils.{DummySpecializedValue, DummySpecializer}
+import one.off_by.sequence.mining.gsp.utils.{ForceSpecializedValue, ForceSpecializer}
 import org.apache.spark.rdd.RDD
 
 import scala.reflect.ClassTag
@@ -9,7 +9,7 @@ import scala.reflect.ClassTag
 object ItemToIdMapper {
   def createMappings[ItemType : ClassTag, @specialized(Int, Long) TimeType, SequenceId](
     transactions: RDD[Transaction[ItemType, TimeType, SequenceId]],
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType]()
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType]()
   ): RDD[(ItemType, Int)] = {
     transactions
       .flatMap(_.items)
@@ -24,7 +24,7 @@ object ItemToIdMapper {
   def mapIn[ItemType : ClassTag, @specialized(Int, Long) TimeType, SequenceId](
     transactions: RDD[Transaction[ItemType, TimeType, SequenceId]],
     mappings: RDD[(ItemType, Int)],
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType]()
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType]()
   ): RDD[Transaction[Int, TimeType, SequenceId]] = {
     transactions
       .zipWithUniqueId
@@ -47,7 +47,7 @@ object ItemToIdMapper {
   def mapOut[ItemType : ClassTag, @specialized(Int, Long) TimeType, SequenceId](
     patterns: RDD[(Pattern[Int], SupportCount)],
     mappings: RDD[(ItemType, Int)],
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType]()
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType]()
   ): RDD[(Pattern[ItemType], SupportCount)] = {
     val reverseMappings = mappings map { case (item, id) => (id, item) }
 

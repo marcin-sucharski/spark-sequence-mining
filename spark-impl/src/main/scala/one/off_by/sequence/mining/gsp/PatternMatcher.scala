@@ -1,7 +1,7 @@
 package one.off_by.sequence.mining.gsp
 
 import one.off_by.sequence.mining.gsp.PatternMatcher.SearchableSequence
-import one.off_by.sequence.mining.gsp.utils.{DummySpecializedValue, DummySpecializer, LoggingUtils}
+import one.off_by.sequence.mining.gsp.utils.{ForceSpecializedValue, ForceSpecializer, LoggingUtils}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.util.LongAccumulator
@@ -55,9 +55,9 @@ SequenceId: ClassTag
   def filter(
     in: RDD[Pattern[ItemType]],
     maybeCandidateCountAccumulator: Option[LongAccumulator] = None,
-    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+    specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
   ): RDD[(Pattern[ItemType], SupportCount)] = {
     val searchableSequencesBV = searchableSequences
     val timeOrderingLocal = timeOrdering
@@ -192,66 +192,76 @@ object PatternMatcher {
     )
   }
 
-  def matches[
-  @specialized(Int, Long) ItemType,
-  @specialized(Int, Long) TimeType,
-  @specialized(Int, Long) DurationType,
-  SequenceId
-  ](
-    pattern: Pattern[ItemType],
-    seq: SearchableSequence[ItemType, TimeType, SequenceId],
-    gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
-  )(implicit timeOrdering: Ordering[TimeType]): Boolean = {
-    assume(seq.items.forall(_._2.nonEmpty))
-    assume(seq.items.nonEmpty)
+def matches[
+@specialized(Int, Long) ItemType,
+@specialized(Int, Long) TimeType,
+@specialized(Int, Long) DurationType,
+SequenceId
+](
+  pattern: Pattern[ItemType],
+  seq: SearchableSequence[ItemType, TimeType, SequenceId],
+  gspOptions: Option[GSPOptions[TimeType, DurationType]],
+  specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+  specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+  specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
+)(implicit timeOrdering: Ordering[TimeType]): Boolean = {
+  assume(seq.items.forall(_._2.nonEmpty))
+  assume(seq.items.nonEmpty)
 
-    val elementFinder: ElementFinder[ItemType, TimeType, DurationType] =
-      createElementFinderFromOptions[ItemType, TimeType, DurationType, SequenceId](gspOptions, seq)(timeOrdering)
+  val elementFinder: ElementFinder[ItemType, TimeType, DurationType] =
+    createElementFinderFromOptions[ItemType, TimeType, DurationType, SequenceId](
+      gspOptions, seq)(timeOrdering)
 
-    val applyMinGap: TimeType => MinTime[TimeType] =
-      createApplyMinGap[TimeType, SequenceId, DurationType](gspOptions)
+  val applyMinGap: TimeType => MinTime[TimeType] =
+    createApplyMinGap[TimeType, SequenceId, DurationType](gspOptions)
 
-    // returns maximum start time for next element
-    val applyMaxGap: TimeType => TimeType =
-      createApplyMaxGap[ItemType, TimeType, SequenceId, DurationType](gspOptions, seq)
+  // returns maximum start time for next element
+  val applyMaxGap: TimeType => TimeType =
+    createApplyMaxGap[ItemType, TimeType, SequenceId, DurationType](gspOptions, seq)
 
-    // returns minimum time of previous element
-    val applyMaxGapBack: TimeType => TimeType =
-      createApplyMaxGapBack[ItemType, TimeType, SequenceId, DurationType](gspOptions, seq)
+  // returns minimum time of previous element
+  val applyMaxGapBack: TimeType => TimeType =
+    createApplyMaxGapBack[ItemType, TimeType, SequenceId, DurationType](gspOptions, seq)
 
-    def extend(minTime: MinTime[TimeType], maxTime: TimeType, rest: Pattern[ItemType]): PatternExtendResult =
-      if (rest.elements.isEmpty) PatternExtendSuccess
-      else {
-        val element = rest.elements.head
-        elementFinder.find(minTime, element) match {
-          case Some((startTime, _)) if timeOrdering.gt(startTime, maxTime) =>
-            PatternExtendBacktrace(MinTime(applyMaxGapBack(startTime), inclusive = true))
+  def extend(
+    minTime: MinTime[TimeType],
+    maxTime: TimeType,
+    rest: Pattern[ItemType]
+  ): PatternExtendResult =
+    if (rest.elements.isEmpty) PatternExtendSuccess
+    else {
+      val element = rest.elements.head
+      elementFinder.find(minTime, element) match {
+        case Some((startTime, _)) if timeOrdering.gt(startTime, maxTime) =>
+          PatternExtendBacktrace(MinTime(applyMaxGapBack(startTime), inclusive = true))
 
-          case Some((_, endTime)) =>
-            extend(applyMinGap(endTime), applyMaxGap(endTime), Pattern(rest.elements.tail)) match {
-              case PatternExtendBacktrace(newMinTime: MinTime[TimeType]) => extend(newMinTime, maxTime, rest)
-              case x                                                     => x
-            }
+        case Some((_, endTime)) =>
+          val tailToExtendOver = Pattern(rest.elements.tail)
+          extend(applyMinGap(endTime), applyMaxGap(endTime), tailToExtendOver) match {
+            case PatternExtendBacktrace(newMinTime: MinTime[TimeType]) =>
+              extend(newMinTime, maxTime, rest)
+            case x                                                     => x
+          }
 
-          case None =>
-            PatternExtendFailure
-        }
+        case None =>
+          PatternExtendFailure
       }
-
-    extend(MinTime(seq.firstElementTime, inclusive = true), seq.lastElementTime, pattern) match {
-      case PatternExtendSuccess => true
-      case _                    => false
     }
+
+  extend(MinTime(seq.firstElementTime, inclusive = true), seq.lastElementTime, pattern) match {
+    case PatternExtendSuccess => true
+    case _                    => false
   }
+}
 
   private[this] sealed trait PatternExtendResult
+
   private[this] final case object PatternExtendSuccess extends PatternExtendResult
+
   private[this] final case class PatternExtendBacktrace[@specialized(Int, Long) TimeType](
     minTime: MinTime[TimeType]
   ) extends PatternExtendResult
+
   private[this] final case object PatternExtendFailure extends PatternExtendResult
 
   final case class MinTime[@specialized(Int, Long) TimeType](
@@ -270,9 +280,9 @@ object PatternMatcher {
     def find(
       minTime: MinTime[TimeType],
       element: Element[ItemType],
-      dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-      dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-      dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+      specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+      specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+      specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
     ): Option[(TransactionStartTime, TransactionEndTime)]
   }
 
@@ -304,9 +314,9 @@ object PatternMatcher {
     override def find(
       minTime: MinTime[TimeType],
       element: Element[ItemType],
-      dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-      dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-      dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+      specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+      specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+      specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
     ): Option[(TransactionStartTime, TransactionEndTime)] =
       findFirst(minTime, element.items.head) match {
         case Some(time) =>
@@ -347,9 +357,9 @@ object PatternMatcher {
     override def find(
       minTime: MinTime[TimeType],
       element: Element[ItemType],
-      dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-      dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-      dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+      specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+      specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+      specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
     ): Option[(TransactionStartTime, TransactionEndTime)] = {
       val maybeTimes = element.items.map(findFirst(minTime, _))
       if (maybeTimes.forall(_.isDefined)) {
@@ -371,9 +381,9 @@ object PatternMatcher {
   ](
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
     seq: SearchableSequence[ItemType, TimeType, SequenceId],
-    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+    specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
   )(implicit timeOrdering: Ordering[TimeType]): ElementFinder[ItemType, TimeType, DurationType] =
     gspOptions match {
       case Some(GSPOptions(typeSupport, Some(windowSize), _, _)) =>
@@ -389,8 +399,8 @@ object PatternMatcher {
   SequenceId,
   @specialized(Int, Long) DurationType](
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+    specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
   ): TimeType => MinTime[TimeType] =
     gspOptions match {
       case Some(GSPOptions(typeSupport, _, Some(minGap), _)) =>
@@ -408,9 +418,9 @@ object PatternMatcher {
   ](
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
     seq: SearchableSequence[ItemType, TimeType, SequenceId],
-    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+    specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
   ): TimeType => TimeType =
     gspOptions match {
       case Some(GSPOptions(typeSupport, _, _, Some(maxGap))) =>
@@ -428,9 +438,9 @@ object PatternMatcher {
   ](
     gspOptions: Option[GSPOptions[TimeType, DurationType]],
     seq: SearchableSequence[ItemType, TimeType, SequenceId],
-    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+    specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
   ): TimeType => TimeType =
     gspOptions match {
       case Some(GSPOptions(typeSupport, _, _, Some(maxGap))) =>
@@ -449,9 +459,9 @@ object PatternMatcher {
     sequence: SearchableSequence[ItemType, TimeType, SequenceId],
     windowSize: DurationType,
     typeSupport: GSPTypeSupport[TimeType, DurationType],
-    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+    specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
   )(implicit
     timeOrdering: Ordering[TimeType],
     durationOrdering: Ordering[DurationType]
@@ -465,9 +475,9 @@ object PatternMatcher {
   SequenceId
   ](
     sequence: SearchableSequence[ItemType, TimeType, SequenceId],
-    dummyItemType: DummySpecializer[ItemType] = DummySpecializedValue[ItemType](),
-    dummyTimeType: DummySpecializer[TimeType] = DummySpecializedValue[TimeType](),
-    dummyDurationType: DummySpecializer[DurationType] = DummySpecializedValue[DurationType]()
+    specItemType: ForceSpecializer[ItemType] = ForceSpecializedValue[ItemType](),
+    specTimeType: ForceSpecializer[TimeType] = ForceSpecializedValue[TimeType](),
+    specDurationType: ForceSpecializer[DurationType] = ForceSpecializedValue[DurationType]()
   )(implicit
     timeOrdering: Ordering[TimeType]
   ): SimpleElementFinder[ItemType, TimeType, DurationType, SequenceId] =
