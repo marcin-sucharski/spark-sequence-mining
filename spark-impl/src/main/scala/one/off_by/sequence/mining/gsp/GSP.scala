@@ -49,6 +49,9 @@ SequenceId: ClassTag
 
   private val patternJoiner = new PatternJoiner[ItemType](partitioner)
 
+  type ItemCount = Long
+  type PatternsWithSupport = RDD[(Pattern[ItemType], SupportCount)]
+
   def execute(
     transactions: RDD[TransactionType],
     minSupport: Percent,
@@ -56,7 +59,7 @@ SequenceId: ClassTag
     maybeOptions: Option[GSPOptions[TimeType, DurationType]] = None,
     statisticsGatherer: Option[StatisticsGatherer] = None
   ): RDD[(Pattern[ItemType], SupportCount)] = {
-    def maybeFilterOut(itemsCount: Long, result: RDD[(Pattern[ItemType], SupportCount)]) =
+    def filterMinItems(itemsCount: ItemCount, result: PatternsWithSupport) =
       if (itemsCount >= minItemsInPattern) result
       else sc.parallelize(List.empty[(Pattern[ItemType], SupportCount)])
 
@@ -73,7 +76,7 @@ SequenceId: ClassTag
     val minSupportCount = (sequenceCount * minSupport).toInt
     statisticsGatherer.foreach(_.saveTransactionCount(transactionCount.value.toInt))
     statisticsGatherer.foreach(_.saveSequenceCount(sequenceCount.toInt))
-    logger.info(s"Total sequence count is $sequenceCount and minimum support count is $minSupportCount.")
+    logger.info(s"Total sequences: $sequenceCount. Minimum support: $minSupportCount.")
 
     val patternMatcher = createPatternMatcher(maybeOptions, sequences, minSupportCount)
 
@@ -84,24 +87,37 @@ SequenceId: ClassTag
     sequences.unpersist()
 
     logger.info(s"Got ${initialPatterns.count()} initial patterns.")
-    val initialState = State(maybeFilterOut(1L, initialPatterns), initialPatterns, 1L)
-    val result = Stream.iterate(initialState) { case State(acc, prev, prevLength) =>
-      val newLength = prevLength + 1
-      logger.info(s"Merging patterns of size $prevLength into $newLength.")
-      val candidates = patternJoiner.generateCandidates(prev.map(_._1))
-      logger.trace(s"Candidates: ${candidates.map(_.toString).toPrettyList}")
-      val candidateCount = sc.longAccumulator
-      val phaseResult = patternMatcher.filter(candidates, Some(candidateCount))
-        .persist(StorageLevels.MEMORY_AND_DISK_SER)
-      statisticsGatherer.foreach {
-        _.saveNextPhaseStatistics(phaseResult.count().toInt, candidateCount.value.toInt)
-      }
-      logger.info(s"Got ${phaseResult.count()} patterns as result.")
-      logger.info(s"There was approximately ${candidateCount.value} candidates.")
-      State(maybeFilterOut(newLength, acc.union(phaseResult)), phaseResult, newLength)
-    } takeWhile (!_.lastPatterns.isEmpty()) lastOption
+    val initialState = State(filterMinItems(1L, initialPatterns), initialPatterns, 1L)
+    val result = Stream.iterate(initialState)(
+      buildLongerPatterns(statisticsGatherer, filterMinItems, patternMatcher)
+    ) takeWhile (!_.lastPatterns.isEmpty()) lastOption
 
     result.map(_.result).getOrElse(sc.parallelize(Nil))
+  }
+
+  private def buildLongerPatterns(
+    statisticsGatherer: Option[StatisticsGatherer],
+    filterMinItems: (ItemCount, PatternsWithSupport) => PatternsWithSupport,
+    patternMatcher: PatternMatcher[ItemType, TimeType, DurationType, SequenceId]
+  )(state: State) = {
+    val State(acc, prev, prevLength) = state
+
+    val newLength = prevLength + 1
+    logger.info(s"Merging patterns of size $prevLength into $newLength.")
+
+    val candidates = patternJoiner.generateCandidates(prev.map(_._1))
+    logger.trace(s"Candidates: ${candidates.map(_.toString).toPrettyList}")
+
+    val candidateCount = sc.longAccumulator
+    val phaseResult = patternMatcher.filter(candidates, Some(candidateCount))
+      .persist(StorageLevels.MEMORY_AND_DISK_SER)
+    statisticsGatherer.foreach {
+      _.saveNextPhaseStatistics(phaseResult.count().toInt, candidateCount.value.toInt)
+    }
+
+    logger.info(s"Got ${phaseResult.count()} patterns as result.")
+    logger.info(s"There was approximately ${candidateCount.value} candidates.")
+    State(filterMinItems(newLength, acc.union(phaseResult)), phaseResult, newLength)
   }
 
   // Creation of PatternMatcher is extracted into separated method thus it can be specialized
