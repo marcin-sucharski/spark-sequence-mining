@@ -73,7 +73,9 @@ SequenceId](
           depth = depth,
           children = children.updated(
             hash,
-            HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](depth + 1, Vector(pattern))))
+            HashTreeLeaf[ItemType, TimeType, DurationType, SequenceId](
+              depth = depth + 1,
+              items = Vector(pattern))))
     }
   }
 
