@@ -26,52 +26,64 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
       .flatMap(_.suffixes)
       .map(p => (p.pattern, p))
 
-    val initialData = joinSuffixesAndPrefixes(prefixes, suffixes, isFirst) filter { case (prefix, suffix) =>
-      val common = prefix.pattern.elements
-      (prefix.joinItem, suffix.joinItem) match {
-        case (JoinItemNewElement(_), JoinItemNewElement(_)) =>
-          true
-
-        case (JoinItemExistingElement(suffixItem), JoinItemNewElement(_)) =>
-          val newItemIsAlreadyInLastElement = common.lastOption.exists(_.items contains suffixItem)
-          !newItemIsAlreadyInLastElement
-
-        case (JoinItemNewElement(_), JoinItemExistingElement(prefixItem)) =>
-          val newItemIsAlreadyInFirstElement = common.headOption.exists(_.items contains prefixItem)
-          !newItemIsAlreadyInFirstElement
-
-        case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
-          val newItemIsNotInFirstElement = common.headOption.exists(!_.items.contains(prefixItem))
-          val newItemIsNotInLastElement = common.lastOption.exists(!_.items.contains(suffixItem))
-          val newItemsAreNotEquivalent = common.length > 1 || prefixItem != suffixItem
-
-          newItemIsNotInFirstElement && newItemIsNotInLastElement &&
-            newItemsAreNotEquivalent
+    val initialData = joinSuffixesAndPrefixes(prefixes, suffixes, isFirst)
+      .filter { case (prefix, suffix) =>
+        isPrefixCompatibleWithSuffix(prefix, suffix)
       }
-    }
 
     val result = initialData map { case (prefix, suffix) =>
-      val common = prefix.pattern.elements
-      val lastIndex = common.size - 1
-      val elements = (prefix.joinItem, suffix.joinItem) match {
-        case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
-          Element(prefixItem) +: common :+ Element(suffixItem)
-
-        case (JoinItemExistingElement(suffixItem), JoinItemNewElement(prefixItem)) =>
-          Element(prefixItem) +: common.updated(lastIndex, common(lastIndex) + suffixItem)
-
-        case (JoinItemNewElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
-          common.updated(0, common(0) + prefixItem) :+ Element(suffixItem)
-
-        case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
-          val withPrefix = common.updated(0, common(0) + prefixItem)
-          withPrefix.updated(lastIndex, withPrefix(lastIndex) + suffixItem)
-      }
-      Pattern(elements)
+      buildPattern(prefix, suffix)
     }
 
     if (isFirst) result
     else result.distinct()
+  }
+
+  private def buildPattern(prefix: PrefixResult[ItemType], suffix: SuffixResult[ItemType]) = {
+    val common = prefix.pattern.elements
+    val lastIndex = common.size - 1
+    val elements = (prefix.joinItem, suffix.joinItem) match {
+      case (JoinItemNewElement(suffixItem), JoinItemNewElement(prefixItem)) =>
+        Element(prefixItem) +: common :+ Element(suffixItem)
+
+      case (JoinItemExistingElement(suffixItem), JoinItemNewElement(prefixItem)) =>
+        Element(prefixItem) +: common.updated(lastIndex, common(lastIndex) + suffixItem)
+
+      case (JoinItemNewElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
+        common.updated(0, common(0) + prefixItem) :+ Element(suffixItem)
+
+      case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
+        val withPrefix = common.updated(0, common(0) + prefixItem)
+        withPrefix.updated(lastIndex, withPrefix(lastIndex) + suffixItem)
+    }
+    Pattern(elements)
+  }
+
+  private def isPrefixCompatibleWithSuffix(
+    prefix: PrefixResult[ItemType],
+    suffix: SuffixResult[ItemType]
+  ) = {
+    val common = prefix.pattern.elements
+    (prefix.joinItem, suffix.joinItem) match {
+      case (JoinItemNewElement(_), JoinItemNewElement(_)) =>
+        true
+
+      case (JoinItemExistingElement(suffixItem), JoinItemNewElement(_)) =>
+        val newItemIsAlreadyInLastElement = common.lastOption.exists(_.items contains suffixItem)
+        !newItemIsAlreadyInLastElement
+
+      case (JoinItemNewElement(_), JoinItemExistingElement(prefixItem)) =>
+        val newItemIsAlreadyInFirstElement = common.headOption.exists(_.items contains prefixItem)
+        !newItemIsAlreadyInFirstElement
+
+      case (JoinItemExistingElement(suffixItem), JoinItemExistingElement(prefixItem)) =>
+        val newItemIsNotInFirstElement = common.headOption.exists(!_.items.contains(prefixItem))
+        val newItemIsNotInLastElement = common.lastOption.exists(!_.items.contains(suffixItem))
+        val newItemsAreNotEquivalent = common.length > 1 || prefixItem != suffixItem
+
+        newItemIsNotInFirstElement && newItemIsNotInLastElement &&
+          newItemsAreNotEquivalent
+    }
   }
 
   private def joinSuffixesAndPrefixes(
@@ -127,22 +139,29 @@ private[gsp] class PatternJoiner[ItemType: Ordering](
     matches: RDD[Pattern[ItemType]],
     source: RDD[Pattern[ItemType]]
   ): RDD[Pattern[ItemType]] = {
-    val subsequences = matches
+    val subsequencesWithoutSingleItem = matches
       .flatMap { pattern =>
         pattern.elements.indices flatMap { index =>
-          allSubsetsWithoutSingleItem(pattern.elements(index).items).map(_._2) map { newElement =>
-            val result = Pattern(pattern.elements.updated(index, newElement).filter(_.items.nonEmpty))
-            (result, pattern)
-          }
+          allSubsetsWithoutSingleItem(pattern.elements(index).items)
+            .map { case (_, element) => element }
+            .map { newElement =>
+              val newPattern = pattern.elements
+                .updated(index, newElement)
+                .filter(_.items.nonEmpty)
+              (Pattern(newPattern), pattern)
+            }
         }
       }
 
-    logger.trace(s"Prune subsequences: ${subsequences.map(_._1).toPrettyList}")
+    logger.trace(s"Prune subsequences: ${subsequencesWithoutSingleItem.map(_._1).toPrettyList}")
 
-    val countedSubsequences = source map (p => (p, 1)) cogroup subsequences flatMap { case (_, (counts, patterns)) =>
-      if (counts.nonEmpty) patterns map (p => (p, 1))
-      else Nil
-    } reduceByKey(_ + _, partitioner.numPartitions * partitioner.numPartitions)
+    val countedSubsequences = source
+      .map(p => (p, 1))
+      .cogroup(subsequencesWithoutSingleItem)
+      .flatMap { case (_, (counts, patterns)) =>
+        if (counts.nonEmpty) patterns map (p => (p, 1))
+        else Nil
+      } reduceByKey(_ + _, partitioner.numPartitions * partitioner.numPartitions)
 
     logger.trace(s"Counted subsequences: ${countedSubsequences.toPrettyList}")
 
@@ -165,12 +184,16 @@ private[gsp] object PatternJoiner {
   /**
     * Item missing from pattern in prefix/suffix creates new element.
     */
-  case class JoinItemNewElement[ItemType](override val item: ItemType) extends JoinItem[ItemType]
+  case class JoinItemNewElement[ItemType](
+    override val item: ItemType
+  ) extends JoinItem[ItemType]
 
   /**
     * Item missing from pattern in prefix/suffix is member of existing element.
     */
-  case class JoinItemExistingElement[ItemType](override val item: ItemType) extends JoinItem[ItemType]
+  case class JoinItemExistingElement[ItemType](
+    override val item: ItemType
+  ) extends JoinItem[ItemType]
 
   sealed trait PrefixSuffixResult[ItemType] {
     def pattern: Pattern[ItemType]
